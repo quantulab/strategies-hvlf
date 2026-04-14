@@ -1,0 +1,16 @@
+[project]
+name = "ib-mcp"
+version = "0.1.0"
+description = "MCP server for Interactive Brokers algorithmic trading R&D"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "ib_insync>=0.9.86",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pydantic-settings>=2.0",
+]
+
+[project.scripts]
+ib-mcp = "ib_mcp.server:main"
