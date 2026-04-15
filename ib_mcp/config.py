@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class IBConfig(BaseSettings):
@@ -7,4 +11,4 @@ class IBConfig(BaseSettings):
     client_id: int = 1
     readonly: bool = True  # Safety: read-only by default for R&D
 
-    model_config = {"env_prefix": "IB_"}
+    model_config = {"env_prefix": "IB_", "env_file": str(_ENV_FILE)}

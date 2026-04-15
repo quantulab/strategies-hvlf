@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ib": {
+      "command": "uv",
+      "args": ["run", "--directory", "D:/src/ai/mcp/ib", "python", "main.py"]
+    }
+  }
+}
