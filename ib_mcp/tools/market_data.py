@@ -1,4 +1,4 @@
-"""Market data tools: quotes, historical bars, option chains."""
+"""Market data tools: quotes, historical bars, option chains, depth, histograms."""
 
 import asyncio
 import json
@@ -228,3 +228,155 @@ async def get_option_quotes(
 
     ib.cancelMktData(contract)
     return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def set_market_data_type(
+    data_type: int = 1,
+    ctx: Context = None,
+) -> str:
+    """Switch between market data types: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed-Frozen.
+
+    Use Delayed (3) if you don't have live market data subscriptions for an exchange.
+
+    Args:
+        data_type: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed-Frozen
+    """
+    ib = _get_ib(ctx)
+    labels = {1: "Live", 2: "Frozen", 3: "Delayed", 4: "Delayed-Frozen"}
+    if data_type not in labels:
+        return f"Invalid data_type {data_type}. Must be 1, 2, 3, or 4."
+
+    ib.reqMarketDataType(data_type)
+
+    return json.dumps(
+        {"dataType": data_type, "label": labels[data_type], "status": "set"},
+        indent=2,
+    )
+
+
+@mcp.tool()
+async def get_market_depth(
+    symbol: str,
+    num_rows: int = 5,
+    sec_type: str = "STK",
+    exchange: str = "SMART",
+    currency: str = "USD",
+    ctx: Context = None,
+) -> str:
+    """Get Level II order book data showing bid/ask depth at multiple price levels.
+
+    Useful for gauging liquidity and support/resistance before entering a position.
+
+    Args:
+        symbol: Ticker symbol (e.g. "AAPL")
+        num_rows: Number of price levels to show (default 5, max 20)
+        sec_type: Security type (default STK)
+        exchange: Exchange (default SMART)
+        currency: Currency (default USD)
+    """
+    ib = _get_ib(ctx)
+    contract = _make_contract(symbol, sec_type, exchange, currency)
+    qualified = await ib.qualifyContractsAsync(contract)
+    if not qualified:
+        return f"Could not find contract for {symbol} ({sec_type})"
+    contract = qualified[0]
+
+    num_rows = min(num_rows, 20)
+    ib.reqMktDepth(contract, numRows=num_rows)
+    await asyncio.sleep(3)
+    ticker = ib.ticker(contract)
+
+    bids = []
+    if ticker.domBids:
+        for dom in ticker.domBids[:num_rows]:
+            bids.append({"price": dom.price, "size": dom.size, "marketMaker": dom.marketMaker})
+
+    asks = []
+    if ticker.domAsks:
+        for dom in ticker.domAsks[:num_rows]:
+            asks.append({"price": dom.price, "size": dom.size, "marketMaker": dom.marketMaker})
+
+    ib.cancelMktDepth(contract)
+
+    return json.dumps(
+        {"symbol": symbol, "bids": bids, "asks": asks},
+        indent=2,
+    )
+
+
+@mcp.tool()
+async def get_head_timestamp(
+    symbol: str,
+    what_to_show: str = "TRADES",
+    sec_type: str = "STK",
+    exchange: str = "SMART",
+    currency: str = "USD",
+    ctx: Context = None,
+) -> str:
+    """Get the earliest available date for historical data on a contract.
+
+    Useful to check how far back historical data goes before requesting it.
+
+    Args:
+        symbol: Ticker symbol (e.g. "AAPL")
+        what_to_show: Data type - TRADES, BID, ASK, MIDPOINT, etc.
+        sec_type: Security type (default STK)
+        exchange: Exchange (default SMART)
+        currency: Currency (default USD)
+    """
+    ib = _get_ib(ctx)
+    contract = _make_contract(symbol, sec_type, exchange, currency)
+    qualified = await ib.qualifyContractsAsync(contract)
+    if not qualified:
+        return f"Could not find contract for {symbol} ({sec_type})"
+    contract = qualified[0]
+
+    head = await ib.reqHeadTimeStampAsync(contract, whatToShow=what_to_show, useRTH=True)
+
+    return json.dumps(
+        {
+            "symbol": symbol,
+            "whatToShow": what_to_show,
+            "earliestTimestamp": str(head) if head else None,
+        },
+        indent=2,
+    )
+
+
+@mcp.tool()
+async def get_histogram(
+    symbol: str,
+    period: str = "1 month",
+    sec_type: str = "STK",
+    exchange: str = "SMART",
+    currency: str = "USD",
+    ctx: Context = None,
+) -> str:
+    """Get price-volume distribution (volume profile) for support/resistance analysis.
+
+    Args:
+        symbol: Ticker symbol (e.g. "AAPL")
+        period: Time period - "1 week", "1 month", "3 months", "6 months", "1 year"
+        sec_type: Security type (default STK)
+        exchange: Exchange (default SMART)
+        currency: Currency (default USD)
+    """
+    ib = _get_ib(ctx)
+    contract = _make_contract(symbol, sec_type, exchange, currency)
+    qualified = await ib.qualifyContractsAsync(contract)
+    if not qualified:
+        return f"Could not find contract for {symbol} ({sec_type})"
+    contract = qualified[0]
+
+    data = await ib.reqHistogramDataAsync(contract, useRTH=True, period=period)
+
+    if not data:
+        return f"No histogram data returned for {symbol}"
+
+    items = [{"price": item.price, "count": item.count} for item in data]
+
+    return json.dumps(
+        {"symbol": symbol, "period": period, "histogram": items},
+        indent=2,
+    )

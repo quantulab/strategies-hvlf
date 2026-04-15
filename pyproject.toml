@@ -12,5 +12,14 @@ dependencies = [
     "pydantic-settings>=2.0",
 ]
 
+[project.optional-dependencies]
+models = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "sentence-transformers>=3.0",
+    "chronos-forecasting>=1.0",
+    "safetensors>=0.4",
+]
+
 [project.scripts]
 ib-mcp = "ib_mcp.server:main"

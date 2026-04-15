@@ -1,0 +1,15 @@
+{
+  "date": "2026-04-15",
+  "scanners": {
+    "GainSinceOpenLarge": ["BIRD", "VSA", "GPRO", "SMU", "ALMU", "AHMA", "IONX", "IONL", "MNTS", "MRLN"],
+    "GainSinceOpenSmall": ["BIGGQ", "BDCC", "NCI", "ASNS", "NIXX", "IPSI", "CUE", "ECIA", "NOTV", "DRRSF"],
+    "HotByVolumeLarge": ["BIRD", "NICM", "CIIT", "VSA", "RSHGY", "ASMU", "DWTX", "NNEX", "VNCE", "TRAW"],
+    "HotByVolumeSmall": ["IMMP", "MLSS", "AGAE", "LRHC", "CTNT", "GBR", "SZZLR", "NCI", "ECIA", "MDCX"],
+    "LossSinceOpenLarge": ["KIDZ", "IONZ", "JDZG", "CIIT", "KZIA", "VCX", "QBTZ", "OBAI", "OKLS", "LCDL"],
+    "LossSinceOpenSmall": ["CTNT", "WNFT", "IBOGF", "ASBP", "LNAI", "IMMP", "COSM", "NOTE", "ENFY", "SAFX"],
+    "PctGainLarge": ["BIRD", "VSA", "NICM", "IONL", "SMU", "IONX", "QBTX", "NNBR", "QPUX", "WATT"],
+    "PctGainSmall": ["IMMP", "BDCC", "NCI", "AGAE", "CRVH", "NWPG", "DFTC", "ECIA", "NOTV", "ROMJF"],
+    "PctLossLarge": ["ARAI", "DOO", "KIDZ", "IONZ", "QBTZ", "OKLS", "RGTZ", "RMSG", "TRAW", "HOOZ"],
+    "PctLossSmall": ["CTNT", "SNAL", "MIMI", "ASBP", "SURG", "ENFY", "BEAT", "GNS", "PMAX", "AYRWF"]
+  }
+}
