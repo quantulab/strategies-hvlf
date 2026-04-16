@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 
 from mcp.server.fastmcp import Context
 
@@ -74,7 +75,13 @@ async def get_connection_status(ctx: Context = None) -> str:
     result = {
         "connected": ib.isConnected(),
         "serverVersion": ib.client.serverVersion() if ib.isConnected() else None,
-        "connectionTime": ib.client.connTime if ib.isConnected() else None,
+        "connectionTime": (
+            datetime.fromtimestamp(
+                ib.client.connectionStats().startTime
+            ).isoformat()
+            if ib.isConnected()
+            else None
+        ),
         "managedAccounts": ib.managedAccounts() if ib.isConnected() else [],
         "host": config.host,
         "port": config.port,
