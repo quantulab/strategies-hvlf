@@ -704,6 +704,137 @@ Once connected through Claude, you can interact naturally:
 
 ---
 
+## ML-Enhanced Rotation Strategies
+
+Six rotation sub-strategies (S32-S37) derived from a 53-day scanner pattern analysis, enhanced with ML conviction modifiers. Managed by a master orchestrator (S31) with HMM regime detection.
+
+### Rotation Sub-Strategies
+
+| ID | Strategy | Signal | ML Enhancement |
+|----|----------|--------|----------------|
+| S32 | Volume Surge Entry | Volume scanner leads gain scanner by ~120 min | `forecast_volume_trajectory` predicts sustainability |
+| S33 | Streak Continuation | Multi-day scanner presence (3+ days) | `compute_hurst_exponent` validates persistence |
+| S34 | Whipsaw Fade | Known whipsaw names on gain scanner | `compute_return_autocorrelation` enables/disables fades |
+| S35 | Pre-Market Persistence | 95.7% persist rate from pre-market to open | `classify_catalyst_topic` types the catalyst |
+| S36 | Cap-Size Breakout | SmallCap→MidCap or MidCap→LargeCap crossover | `classify_catalyst_topic` filters structural vs growth |
+| S37 | Elite Accumulation | Top-5 rank holder for 3+ consecutive days | `forecast_scanner_rank(multi_day=True)` predicts rank |
+
+### ML Conviction Modifiers
+
+Applied universally to all rotation candidates before final scoring:
+
+| Factor | Points | Tool |
+|--------|--------|------|
+| Sentiment gate approves | +2 | `get_sentiment_gate(symbol)` |
+| Sentiment gate rejects | -1 | `get_sentiment_gate(symbol)` |
+| Fundamental catalyst (earnings, FDA, M&A) | +1 | `classify_catalyst_topic(headline)` |
+| HMM regime matches sub-strategy | +1 | `classify_market_regime(method="hmm")` |
+| HMM regime deprioritizes sub-strategy | -2 | `classify_market_regime(method="hmm")` |
+
+### HMM Regime Detection
+
+3-state Gaussian HMM classifies the market and routes capital:
+
+| Regime | Prioritized Strategies | Position Size |
+|--------|----------------------|---------------|
+| `bull_momentum` | Streak, Volume Surge, Elite | 100% |
+| `bear_mean_reversion` | Whipsaw Fade, Pre-Market | 50% |
+| `range_bound` | Whipsaw Fade, Pre-Market, Volume Surge | 75% |
+
+### Separate Database
+
+Rotation strategies use `rotation_scanner.db` (separate from `trading.db`) with additional tables: `rotation_state`, `whipsaw_watchlist`, `volume_lead_signals`, `streak_tracker`, `capsize_crossovers`.
+
+### Research Report
+
+See `docs/Rotation_Strategy_Enhancement_Report.md` for the full analysis of 60+ arxiv papers and 30+ HuggingFace models that informed these enhancements.
+
+---
+
+## Quantitative Analysis Tools
+
+Pure-math MCP tools for statistical analysis (no ML models required):
+
+### Hurst Exponent (`compute_hurst_exponent`)
+
+Measures trend persistence using the Rescaled Range (R/S) method:
+- H > 0.55 = **persistent** (trending) — streak strategies should enter
+- H < 0.45 = **anti-persistent** (mean-reverting) — streak strategies should skip
+- 0.45-0.55 = random walk
+
+```
+compute_hurst_exponent(symbol="NVDA", duration="20 D", bar_size="1 day")
+→ {"hurst": 0.62, "interpretation": "persistent"}
+```
+
+### Return Autocorrelation (`compute_return_autocorrelation`)
+
+Measures mean-reversion tendency for fade strategy decisions:
+- AC < -0.1 = **mean-reverting** — fades work
+- AC > 0.1 = **trending** — fades fail, disable whipsaw strategy
+- Near 0 = neutral
+
+```
+compute_return_autocorrelation(symbol="UVIX", duration="5 D", lag=1)
+→ {"autocorrelation": -0.32, "interpretation": "mean_reverting"}
+```
+
+### Volume Trajectory Forecast (`forecast_volume_trajectory`)
+
+Uses Chronos to predict whether a volume surge will sustain or fade:
+
+```
+forecast_volume_trajectory(symbol="NVDA", prediction_length=12)
+→ {"volume_trend": "rising", "trend_slope": 0.04, "predicted_volumes": [...]}
+```
+
+### Sentiment Gate (`get_sentiment_gate`)
+
+Quick approve/reject decision based on FinBERT analysis of recent headlines:
+
+```
+get_sentiment_gate(symbol="NVDA", threshold=-0.3)
+→ {"gate": "approve", "avg_sentiment": 0.42, "headline_count": 5}
+```
+
+---
+
+## Claude Code Commands
+
+Slash commands for daily trading operations:
+
+### Day Lifecycle
+
+| Command | Description |
+|---------|-------------|
+| `/start-trading-day` | Pre-market setup + start core 8-phase engine on 10-min loop |
+| `/start-ml-trading-day` | Pre-market setup + start BOTH core engine AND ML rotation engine |
+| `/end-trading-day` | EOD risk check, reconciliation, KPIs, lessons |
+| `/end-ml-trading-day` | EOD wrap-up with ML model accuracy review |
+
+### Engine Execution
+
+| Command | Description |
+|---------|-------------|
+| `/run-trading-engine` | Execute one 8-phase cycle (core 11 strategies) |
+| `/run-ml-strategies` | Execute one ML-enhanced rotation cycle (S31-S37) |
+| `/run-rotation-strategies` | Execute rotation strategies without ML modifiers |
+
+### Recurring Loops
+
+```bash
+# Start core engine (10-min cycles)
+/loop 10m /run-trading-engine
+
+# Start ML rotation engine (10-min cycles)
+/loop 10m /run-ml-strategies
+
+# Start both in parallel
+/start-ml-trading-day
+```
+
+---
+
 ## Dependencies
 
 ### Core
