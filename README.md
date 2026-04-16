@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) server for Interactive Brokers — a full-stack algorithmic trading research platform that connects Claude to live markets, scanner data, ML models, and a backtesting engine.
 
-Built on [FastMCP](https://github.com/jlowin/fastmcp) + [ib_insync](https://github.com/erdewit/ib_insync), with 53 MCP tools, 41 trading strategies, 15 HuggingFace model integrations, and a 52-day backtesting framework.
+Built on [FastMCP](https://github.com/jlowin/fastmcp) + [ib_insync](https://github.com/erdewit/ib_insync), with 62+ MCP tools, 41 trading strategies (11 core + 30 ML/rotation), 18 HuggingFace model integrations, HMM regime detection, and a 52-day backtesting framework.
 
 ---
 
@@ -24,6 +24,9 @@ Built on [FastMCP](https://github.com/jlowin/fastmcp) + [ib_insync](https://gith
 - [Cron Job System](#cron-job-system)
 - [Technical Papers](#technical-papers)
 - [Example Usage](#example-usage)
+- [ML-Enhanced Rotation Strategies](#ml-enhanced-rotation-strategies)
+- [Quantitative Analysis Tools](#quantitative-analysis-tools)
+- [Claude Code Commands](#claude-code-commands)
 - [Dependencies](#dependencies)
 - [License](#license)
 
