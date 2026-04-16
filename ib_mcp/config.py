@@ -11,5 +11,6 @@ class IBConfig(BaseSettings):
     port: int = 7497  # TWS paper: 7497, TWS live: 7496, GW paper: 4002, GW live: 4001
     client_id: int = hash(time.time_ns()) % 2**16
     readonly: bool = True  # Safety: read-only by default for R&D
+    scanner_path: str = ""  # Scanner CSV directory — set via env or passed per-call from instruction files
 
     model_config = {"env_prefix": "IB_", "env_file": str(_ENV_FILE)}

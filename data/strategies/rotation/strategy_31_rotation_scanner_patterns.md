@@ -299,6 +299,22 @@ CREATE TABLE IF NOT EXISTS capsize_crossovers (
 
 **Also call `start_job_execution(job_id="strategy_31_rotation")` in trading.db for cross-strategy visibility.**
 
+### ML Schema Migration (run once)
+
+On first run with ML enhancements, execute these ALTER TABLE statements against `rotation_scanner.db`. Ignore "duplicate column name" errors:
+
+```sql
+ALTER TABLE scanner_picks ADD COLUMN hurst_exponent REAL;
+ALTER TABLE scanner_picks ADD COLUMN autocorrelation REAL;
+ALTER TABLE scanner_picks ADD COLUMN sentiment_score REAL;
+ALTER TABLE scanner_picks ADD COLUMN sentiment_gate TEXT;
+ALTER TABLE scanner_picks ADD COLUMN catalyst_topic TEXT;
+ALTER TABLE scanner_picks ADD COLUMN volume_forecast_trend TEXT;
+ALTER TABLE rotation_state ADD COLUMN regime_hmm TEXT;
+ALTER TABLE rotation_state ADD COLUMN regime_hmm_confidence REAL;
+ALTER TABLE strategy_positions ADD COLUMN ml_signals TEXT;
+```
+
 ---
 
 ## PHASE 1: Pre-Trade Checklist (every run)
@@ -312,16 +328,17 @@ CREATE TABLE IF NOT EXISTS capsize_crossovers (
 5. **Verify IB connection** — if disconnected, log error and attempt reconnect
 6. **Load whipsaw watchlist** from `rotation_scanner.db` → `whipsaw_watchlist` — these symbols get special handling
 7. **Load active streaks** from `rotation_scanner.db` → `streak_tracker` WHERE `status='active'`
-8. **Compute market regime** from scanner breadth:
+8. **Compute market regime** (enhanced with HMM):
    - Call `get_scanner_results` for today — count unique tickers (market breadth)
    - Compute gain/loss ratio from gain vs loss scanner counts
-   - Classify: BULL (G/L > 1.2), BEAR (G/L < 0.8), NEUTRAL (0.8–1.2)
-   - Classify breadth: EXPANDING (today > 10d avg), CONTRACTING (today < 10d avg)
-9. **Select rotation priority** based on regime:
-   - BULL + EXPANDING → prioritize: `rotation_streak_continuation`, `rotation_volume_surge`, `rotation_elite_accumulation`
-   - BULL + CONTRACTING → prioritize: `rotation_elite_accumulation`, `rotation_volume_surge`
-   - BEAR + ANY → prioritize: `rotation_whipsaw_fade`, `rotation_premarket_persist`
-   - NEUTRAL → all sub-strategies eligible, rank by conviction
+   - Call `classify_market_regime(method="hmm", breadth=N, gl_ratio=X, volume_level=Y)` for HMM-based regime detection
+   - The HMM returns one of: `bull_momentum`, `bear_mean_reversion`, `range_bound`
+   - Also call `classify_market_regime()` (zero-shot) as a secondary signal for logging
+   - If HMM and zero-shot disagree, use HMM for routing but log the disagreement
+9. **Select rotation priority** based on HMM regime routing:
+   - `bull_momentum` → prioritize: `rotation_streak_continuation`, `rotation_volume_surge`, `rotation_elite_accumulation`
+   - `bear_mean_reversion` → prioritize: `rotation_whipsaw_fade`, `rotation_premarket_persist`
+   - `range_bound` → all sub-strategies eligible, prioritize: `rotation_whipsaw_fade`, `rotation_premarket_persist`, `rotation_volume_surge`
 10. Log rotation state to `rotation_scanner.db` → `rotation_state`
 11. UPDATE `job_executions` with `phase_completed=1, positions_checked=N, portfolio_pnl=X, portfolio_pnl_pct=Y`
 
@@ -482,6 +499,20 @@ Each sub-strategy has its own scoring model:
 | Avg rank < 10 (dominant position) | +2 |
 | On whipsaw watchlist with EXTREME danger | -3 |
 | **Tier 1 threshold** | **5+** |
+
+### Universal ML Conviction Modifiers (apply to ALL sub-strategies)
+
+Before computing sub-strategy-specific scores, apply these ML modifiers to every candidate:
+
+| Factor | Points | Tool Call |
+|--------|--------|-----------|
+| Sentiment gate approves | +2 | `get_sentiment_gate(symbol)` returns `gate="approve"` |
+| Sentiment gate rejects (avg < -0.3) | -1 | `get_sentiment_gate(symbol)` returns `gate="reject"` |
+| Catalyst topic is fundamental (earnings, M&A, FDA) | +1 | `classify_catalyst_topic(headline)` returns `is_fundamental_catalyst=true` |
+| HMM regime matches sub-strategy priority | +1 | Sub-strategy is in HMM routing's `prioritize` list |
+| HMM regime deprioritizes sub-strategy | -2 | Sub-strategy is in HMM routing's `deprioritize` list |
+
+**Sentiment gate handling:** If `get_sentiment_gate` fails (no headlines, model error), score is unchanged (0 points). The gate is a modifier, not a hard requirement.
 
 ### Tier Classification
 - **Tier 1 (score 5+):** Trade with full size
@@ -791,6 +822,14 @@ These lessons are derived from the 53-day scanner pattern report and must be app
 | `get_news_headlines(symbol)` | Phase 4 — catalyst confirmation for stale signal override |
 | `classify_market_regime()` | Phase 1 — market context for rotation priority |
 | `get_job_executions(job_id, limit)` | Phase 1 — check for repeated failures |
+| `get_sentiment_gate(symbol)` | Phase 4 — universal sentiment conviction modifier |
+| `classify_catalyst_topic(headline)` | Phase 4 — catalyst type classification |
+| `classify_market_regime(method="hmm", breadth, gl_ratio, volume_level)` | Phase 1 — HMM regime detection |
+| `detect_regime_hmm(breadth, gl_ratio, volume_level)` | Phase 1 — alternative HMM regime detection |
+| `compute_hurst_exponent(symbol)` | Phase 4 — streak persistence validation (delegated to sub-strategies) |
+| `compute_return_autocorrelation(symbol)` | Phase 1 — whipsaw fade regime filter (delegated) |
+| `forecast_volume_trajectory(symbol)` | Phase 3 — volume surge sustainability (delegated) |
+| `forecast_scanner_rank(symbol, scanner, multi_day=True)` | Phase 4 — multi-day rank trajectory (delegated) |
 
 ---
 

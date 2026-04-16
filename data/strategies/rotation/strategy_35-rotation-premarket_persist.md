@@ -121,6 +121,17 @@ For each persisted candidate:
 - If `danger_level = "HIGH"` → **REJECT** (too risky for a persistence play)
 - If `danger_level = "MODERATE"` → proceed with caution (reduce conviction by -1)
 
+### Catalyst Topic Classification (ML Enhancement)
+For each persisted, non-whipsaw candidate:
+1. Call `get_news_headlines(symbol)` to fetch recent headlines
+2. For each headline, call `classify_catalyst_topic(headline)`
+3. Classify the pre-market move driver:
+   - **Earnings/upgrade/M&A catalyst** → HIGH PERSISTENCE expected (+2 conviction)
+   - **Macro/sector rotation catalyst** → MODERATE PERSISTENCE expected (+0 conviction)
+   - **No news catalyst (technical only)** → LOWER PERSISTENCE expected (-1 conviction if on MODERATE whipsaw list)
+4. Call `get_sentiment_gate(symbol)` for sentiment check
+5. Log `catalyst_topic` and `sentiment_gate` to `scanner_picks`
+
 UPDATE `job_executions` with `phase_completed=3, candidates_found=N`
 
 ---
@@ -136,6 +147,9 @@ For each persisted, non-whipsaw candidate:
 | Pre-market volume > 100K shares | +2 | `get_quote` volume check |
 | On 2+ gain scanners simultaneously | +1 | Count distinct gain scanners |
 | NOT on whipsaw watchlist at all | +1 | Clean watchlist check |
+| News-driven positive catalyst (earnings, upgrade) | +2 | `classify_catalyst_topic(headline)` returns fundamental catalyst |
+| Sentiment gate approves | +1 | `get_sentiment_gate(symbol)` |
+| No news catalyst + on whipsaw MODERATE list | -2 | No fundamental catalyst AND `whipsaw_watchlist.danger_level="MODERATE"` |
 | Gap > 10% from prior close (overextended) | -2 | Excessive gap = fade risk |
 | On whipsaw watchlist (MODERATE level) | -1 | Elevated risk |
 | Spread > 2% at 9:35 | -2 | Poor open liquidity |
@@ -311,6 +325,9 @@ Report §8: 311,303 transitions from HighOpenGap → LossSinceOpen. If a pre-mar
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stop |
 | `get_scanner_dates()` | Phase 3 |
+| `classify_catalyst_topic(headline)` | Phase 3 — classify pre-market catalyst type |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment conviction modifier |
+| `get_news_headlines(symbol)` | Phase 3 — fetch headlines for catalyst classification |
 
 ---
 

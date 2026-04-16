@@ -137,6 +137,15 @@ A signal fires when:
 - Scanner is a GAIN scanner (TopGainers, GainSinceOpen) — volume-only streaks are informational, not entry signals
 - For VOLUME scanner streaks (MostActive, TopVolumeRate, HotByVolume): only signal if symbol is ALSO on a gain scanner today
 
+### Step 5: Persistence Validation (ML Enhancement)
+For each tradeable signal:
+1. Call `compute_hurst_exponent(symbol, duration="20 D")` to measure trend persistence
+2. If `hurst < 0.45` (anti-persistent) → SKIP signal — streak is noise, not genuine momentum
+3. If `hurst > 0.55` (persistent) → confirm signal — streak has genuine trend persistence
+4. Call `forecast_scanner_rank(symbol, scanner, multi_day=True)` for multi-day rank prediction
+5. If rank predicted to worsen over next 3 days → SKIP signal
+6. Log `hurst_exponent` to `scanner_picks.hurst_exponent`
+
 UPDATE `job_executions` with `phase_completed=3, candidates_found=N`
 
 ---
@@ -152,6 +161,10 @@ For each streak continuation candidate:
 | On 2+ scanner types simultaneously today | +2 | Count distinct scanner appearances |
 | Elite holder (top-5 for 3+ days) — report §11 | +2 | Cross-ref elite holders list |
 | Known 53-day persistent ticker (list above) | +1 | Symbol in known long-streak list |
+| Hurst exponent > 0.55 (persistent trend) | +2 | `compute_hurst_exponent(symbol)` |
+| Hurst exponent < 0.45 (anti-persistent) | -3 | Skip — streak is mean-reverting noise |
+| Multi-day rank forecast improving | +2 | `forecast_scanner_rank(symbol, scanner, multi_day=True)` predicts rank improvement |
+| Sentiment gate approves | +1 | `get_sentiment_gate(symbol)` |
 | On whipsaw watchlist | -2 | `whipsaw_watchlist` lookup |
 | Streak just started (day 3 exactly) | -1 | More confidence at day 5+ |
 | Rank deteriorating (delta > +5) | -2 | Rank worsening despite streak |
@@ -319,6 +332,9 @@ A ticker may streak on TopGainers AND TopLosers alternating days. Always check w
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — ratchet stops |
 | `get_scanner_dates()` | Phase 3 |
+| `compute_hurst_exponent(symbol, duration)` | Phase 3 — validate streak persistence |
+| `forecast_scanner_rank(symbol, scanner, multi_day=True)` | Phase 3 — multi-day rank forecast |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment conviction modifier |
 
 ---
 

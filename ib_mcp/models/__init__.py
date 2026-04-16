@@ -34,6 +34,11 @@ MODEL_IDS = {
     # Classification models
     "bart_mnli": "facebook/bart-large-mnli",
     "ner": "dslim/bert-base-NER",
+    # Additional sentiment/topic models (rotation strategy enhancements)
+    "finbert_topic": "nickmuchi/finbert-tone-finetuned-finance-topic-classification",
+    "modern_finbert": "beethogedeon/Modern-FinBERT-large",
+    # Latest time series model
+    "chronos_2": "amazon/chronos-2",
 }
 
 
@@ -72,7 +77,7 @@ class ModelRegistry:
         model_id = MODEL_IDS[key]
         logger.info(f"Loading model '{key}' ({model_id}) on {DEVICE}...")
 
-        if key in ("chronos_small", "chronos_bolt", "chronos_large"):
+        if key in ("chronos_small", "chronos_bolt", "chronos_large", "chronos_2"):
             from chronos import ChronosPipeline
             self._models[key] = ChronosPipeline.from_pretrained(
                 model_id, device_map=DEVICE, torch_dtype=torch.float32,

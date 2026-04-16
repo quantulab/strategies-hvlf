@@ -21,8 +21,9 @@ ALL_SCANNERS = sorted(GAIN_SET | LOSS_SET | VOL_SET)
 MIN_PRICE = 2.00           # Reject sub-$2 stocks (25% win rate on sub-$1)
 MIN_AVG_VOLUME = 50_000    # Reject illiquid names
 MAX_SPREAD_PCT = 0.03      # Reject if bid-ask spread > 3%
-MIN_SCORE = 5              # Tier1 only (was 3/Tier2)
+MIN_SCORE = 3              # Tier2+ (lowered from 5: score 3 had 60% WR vs 29% at score 5)
 MAX_POSITIONS = 10         # Was 15 — forces selectivity
+MAX_POSITIONS_PARALLEL = 5 # When running alongside rotation engine (5 core + 5 rotation = 10)
 WARRANT_SUFFIXES = {"R", "W", "WS", "U"}  # Exclude warrants/units/rights
 
 
@@ -140,6 +141,10 @@ def run():
                 if on_gain and on_loss:
                     score -= 1
 
+                # Bonus: GainSinceOpenLarge + PctGainLarge combo (85.7% WR in Apr 15-16 data)
+                if {"GainSinceOpenLarge", "PctGainLarge"} <= all_s:
+                    score += 3
+
                 if s in GAIN_SET:
                     action = "BUY"
                 elif s in VOL_SET:
@@ -161,7 +166,7 @@ def run():
                 elif on_gain and on_vol:
                     conflict = "YELLOW"
 
-                if score >= MIN_SCORE:
+                if score >= 5:
                     tier = "Tier1"
                 elif score >= 3:
                     tier = "Tier2"
@@ -170,9 +175,9 @@ def run():
                 else:
                     tier = "Blacklist"
 
-                if tier != "Tier1" and not rejected:
+                if tier not in ("Tier1", "Tier2") and not rejected:
                     rejected = True
-                    reject_reason = f"Score {score} below Tier1 (need {MIN_SCORE}+)"
+                    reject_reason = f"Score {score} below Tier2 (need {MIN_SCORE}+)"
 
                 trending.append(
                     dict(

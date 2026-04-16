@@ -133,6 +133,13 @@ For each candidate, INSERT into `rotation_scanner.db` → `volume_lead_signals`:
 - If candidate is in the top-25 predictable tickers list → flag as HIGH PRIORITY
 - Record the ticker's historical avg lead time for position management
 
+### Step 5: Volume Trajectory Forecast (ML Enhancement)
+For each HIGH PRIORITY candidate:
+1. Call `forecast_volume_trajectory(symbol)` to predict if volume surge will sustain
+2. If `volume_trend` is "falling" → downgrade from HIGH PRIORITY to WATCH (volume spike is fading)
+3. If `volume_trend` is "rising" → confirm HIGH PRIORITY (volume surge is accelerating)
+4. Log `volume_forecast_trend` to `scanner_picks.volume_forecast_trend`
+
 UPDATE `job_executions` with `phase_completed=3, candidates_found=N`
 
 ---
@@ -148,6 +155,10 @@ For each volume surge candidate:
 | NOT on any loss scanner | +2 | Cross-reference loss scanners |
 | Lead time < 60 min historically (fast mover) | +1 | From known ticker table |
 | Price > $5 | +1 | From `get_quote` |
+| Volume trajectory rising (forecast) | +2 | `forecast_volume_trajectory(symbol)` returns `volume_trend="rising"` |
+| Sentiment gate approves | +1 | `get_sentiment_gate(symbol)` returns `gate="approve"` |
+| News-driven volume (fundamental catalyst) | +1 | `classify_catalyst_topic(headline)` returns `is_fundamental_catalyst=true` |
+| Volume trajectory falling (forecast) | -2 | `forecast_volume_trajectory(symbol)` returns `volume_trend="falling"` |
 | On whipsaw watchlist (EXTREME danger) | -3 | Cross-reference `whipsaw_watchlist` |
 | Already had a volume signal today (stale) | -2 | Check `volume_lead_signals` for today |
 | On loss scanner in last 30 min | -3 | Recent loss scanner check |
@@ -327,6 +338,9 @@ Signals where gain scanner fires within 15 min of volume signal capture the shar
 | `place_order(symbol, action, quantity, order_type, stop_price)` | Phase 2, Phase 5 |
 | `modify_order(order_id, ...)` | Phase 6 — ratchet stops |
 | `get_scanner_dates()` | Phase 3 — confirm today's data |
+| `forecast_volume_trajectory(symbol)` | Phase 3 — predict if volume surge will sustain |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment conviction modifier |
+| `classify_catalyst_topic(headline)` | Phase 4 — catalyst type for volume context |
 
 ---
 

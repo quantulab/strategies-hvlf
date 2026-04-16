@@ -41,6 +41,15 @@ The system was taking too many low-quality trades on illiquid penny stocks and w
 |-------------|------|-----------|
 | $5-$10 | Must appear on 2+ consecutive scan runs | 0% win rate on first-pop entries in this bracket |
 
+### Extended Filters (added 2026-04-16 EOD)
+| Filter | Threshold | Rationale |
+|--------|-----------|-----------|
+| Extended move | Reject if (last-close)/close > 1.0 | PBM at +178% stopped out in 9 sec |
+| Volume confirmation | Volume > 2x avg OR HotByVolume rank <= 4 | Every 80%+ WR strategy gates on volume |
+| Price action | (last-low)/(high-low) must be > 0.50 | Reject fading momentum entries |
+| Time-of-day | No new entries after 2:00 PM ET | Late entries face fading momentum |
+| Stop-restricted symbols | If STP Inactive 2+ times, use trailing stop | WNW, RMSG had persistent Inactive stops |
+
 ## Profit Protection — Trailing Stop Ratchet (MANDATORY)
 **Overrides strategy-specific stops when it produces a tighter (higher) stop. Learned from AGAE 2026-04-15: +26% gain reversed to -7% loss with no protection.**
 
@@ -57,7 +66,8 @@ The system was taking too many low-quality trades on illiquid penny stocks and w
 - Log adjustments with `strategy_id = "profit_protection"`
 
 ## Expected Impact
-- Trades per day: 25 → ~8-10
-- Win rate: 40% → 60-65%
+- Trades per day: 25 → ~4-6 (further reduced by volume/price/time gates)
+- Win rate: 25% (actual Apr 16) → **50-60%** target with new gates
 - Avg winner: ~8.8% (unchanged)
-- Avg loser: smaller (higher quality entries)
+- Avg loser: smaller (higher quality entries, no extended move chasers)
+- Key improvement: Volume gate alone expected to add +15% win rate based on Momentum Surfing comparison

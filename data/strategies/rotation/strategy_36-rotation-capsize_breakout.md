@@ -148,6 +148,10 @@ For each crossover candidate:
 | On a gain scanner in the NEW cap tier | +1 | Scanner type is TopGainers/GainSinceOpen |
 | Known frequent crossover ticker (list above) | +1 | Symbol in known list |
 | Small→Large (skip a tier — rare, explosive) | +2 | Direct 2-tier jump |
+| Fundamental catalyst driving crossover (earnings, M&A, revenue growth) | +2 | `classify_catalyst_topic(headline)` returns `is_fundamental_catalyst=true` |
+| Sentiment gate approves | +1 | `get_sentiment_gate(symbol)` |
+| Volume trajectory sustained (forecast rising) | +1 | `forecast_volume_trajectory(symbol)` returns `volume_trend="rising"` |
+| ETF rebalancing / structural crossover suspected (no fundamental catalyst) | -2 | No fundamental catalyst for known ETF |
 | Large→Mid or Mid→Small (downgrade) | -5 | NEVER trade downgrades |
 | Leveraged ETF crossover | -3 | Structural, not growth |
 | On whipsaw watchlist (EXTREME) | -2 | Reversal risk |
@@ -334,6 +338,9 @@ Standard 5% stop is too tight for a multi-day strategy — normal daily volatili
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stops |
 | `get_scanner_dates()` | Phase 3 |
+| `classify_catalyst_topic(headline)` | Phase 4 — classify crossover catalyst |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment conviction modifier |
+| `forecast_volume_trajectory(symbol)` | Phase 5 — volume sustainability check |
 
 ---
 

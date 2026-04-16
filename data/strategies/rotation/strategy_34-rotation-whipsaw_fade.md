@@ -82,6 +82,11 @@ These tickers have the highest reversal frequency. They are the primary universe
 4. **Check time:** If after 2:00 PM ET, skip to Phase 6 (monitoring only, no new entries)
 5. **Check open orders** via `get_open_orders()`
 6. **Verify IB connection**
+6b. **Autocorrelation regime check (ML Enhancement):**
+   - For the top 3 most-traded whipsaw symbols (by volume), call `compute_return_autocorrelation(symbol, duration="5 D")`
+   - If ALL return autocorrelation > 0.1 (trending market) → **DISABLE fades for this cycle** — trending markets don't mean-revert
+   - If ANY autocorrelation < -0.1 (mean-reverting) → fades are enabled
+   - Log regime finding to `rotation_state`
 7. UPDATE `job_executions` with `phase_completed=1`
 
 ---
@@ -146,6 +151,10 @@ For each whipsaw fade candidate:
 | Up >5% from prior close (overextended) | +2 | `get_quote` calculation |
 | Known leveraged ETF (UVIX, SQQQ, SOXL, MSTU, etc.) | +1 | Symbol classification |
 | Currently on gain scanner ONLY (anticipatory) | +1 | Not yet on loss scanner — early entry |
+| Return autocorrelation < -0.1 (mean-reverting) | +2 | `compute_return_autocorrelation(symbol)` |
+| Catalyst is fundamental (earnings, FDA) — real catalyst, less likely to revert | -3 | `classify_catalyst_topic(headline)` returns `is_fundamental_catalyst=true` |
+| Sentiment strongly positive (gate approve + avg > 0.5) — real catalyst | -2 | `get_sentiment_gate(symbol)` returns `avg_sentiment > 0.5` |
+| No news catalyst (technical/flow-driven gap) | +1 | `classify_catalyst_topic` has no fundamental match |
 | Spread > 2% (poor liquidity for fade) | -3 | `get_quote` spread check |
 | Up < 2% (insufficient move to fade) | -2 | Weak setup |
 | Already on loss scanner only (missed the move) | -2 | Already reverted |
@@ -319,6 +328,9 @@ Report §8 shows 311,303 transitions from HighOpenGap → LossSinceOpen. This IS
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 |
 | `classify_market_regime()` | Phase 1 — disable on trending days |
+| `compute_return_autocorrelation(symbol, duration)` | Phase 1 — autocorrelation regime check |
+| `classify_catalyst_topic(headline)` | Phase 4 — distinguish real catalyst from technical gap |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment strength check for fade validity |
 
 ---
 

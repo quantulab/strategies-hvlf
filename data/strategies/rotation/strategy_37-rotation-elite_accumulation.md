@@ -135,6 +135,14 @@ For each eligible elite symbol:
    - Current price was ABOVE VWAP earlier today (it ran, then pulled back — not falling into VWAP from below)
 4. NOT a pullback if price has been below VWAP all day → this is weakness, not accumulation
 
+### Step 5: Rank Trajectory Forecast (ML Enhancement)
+For each eligible elite symbol with VWAP pullback confirmed:
+1. Call `forecast_scanner_rank(symbol, scanner, multi_day=True)` to predict rank evolution over next 3-5 days
+2. If `enters_top5 = false` AND `rank_improving = false` → SKIP — elite status predicted to fade
+3. If `enters_top5 = true` AND `rank_improving = true` → confirm entry — elite persistence predicted
+4. Call `get_sentiment_gate(symbol)` for sentiment validation
+5. If sentiment gate rejects AND position would be 3rd concurrent → SKIP (reduce risk on marginal entries)
+
 UPDATE `job_executions` with `phase_completed=3, candidates_found=N`
 
 ---
@@ -150,6 +158,10 @@ For each elite accumulation candidate:
 | On 3+ scanner types simultaneously today | +2 | Count distinct scanners |
 | Avg rank < 10 (dominant position) | +2 | From report §1 or current data |
 | VWAP pullback confirmed (price within 0.5% of VWAP) | +2 | Phase 3 pullback detection |
+| Sentiment gate approves (sustained positive sentiment flow) | +2 | `get_sentiment_gate(symbol)` |
+| Rank trajectory forecast: stays top-5 next 3+ days | +2 | `forecast_scanner_rank(symbol, scanner, multi_day=True)` |
+| News-driven accumulation (analyst upgrade, 13F filing topic) | +1 | `classify_catalyst_topic(headline)` |
+| Rank forecast: predicted to exit top-5 within 2 days | -2 | `forecast_scanner_rank` shows rank worsening |
 | Top-5 for only 3 days exactly (just qualifying) | -1 | Less confidence than 5+ |
 | On whipsaw watchlist (EXTREME danger) | -3 | These flip direction constantly |
 | Price below VWAP (weakness, not pullback) | -3 | Not an accumulation signal |
@@ -335,6 +347,9 @@ A ticker can be #1 on TopGainers for 1-2 days due to a news catalyst then disapp
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stops |
 | `get_scanner_dates()` | Phase 3 |
+| `forecast_scanner_rank(symbol, scanner, multi_day=True)` | Phase 3 — multi-day rank trajectory forecast |
+| `get_sentiment_gate(symbol)` | Phase 4 — sentiment conviction modifier |
+| `classify_catalyst_topic(headline)` | Phase 4 — catalyst classification for accumulation context |
 
 ---
 

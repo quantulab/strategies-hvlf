@@ -15,6 +15,8 @@ import ib_mcp.tools.system  # noqa: F401, E402
 import ib_mcp.tools.trading_log  # noqa: F401, E402
 import ib_mcp.tools.models  # noqa: F401, E402
 import ib_mcp.tools.analytics  # noqa: F401, E402
+import ib_mcp.tools.quant  # noqa: F401, E402
+import ib_mcp.tools.rotation_ml  # noqa: F401, E402
 
 
 def main():

@@ -17,6 +17,32 @@ Runs every 10 minutes during market hours via Claude Code CronCreate.
 
 ---
 
+## Parallel Engine Coordination (when running with ML/Rotation engines)
+
+When launched via `/start-ml-trading-day`, this engine runs alongside:
+- **ML Strategies Engine** (`data/instructions/ml_strategies_engine.md`) — uses trading.db
+- **Rotation Strategies Engine** (`data/instructions/rotation_strategies_engine.md`) — uses rotation_scanner.db
+
+### Position Limits in Parallel Mode
+- **Max 5 core positions** (reduced from 10 when running alongside rotation)
+- Combined total: max 10 positions across all engines (5 core + 5 rotation)
+- Max 2 new entries per cycle
+
+### Symbol Lock (BEFORE every BUY)
+1. Call `get_positions()` from IB — returns ALL positions across all engines
+2. If candidate symbol already held by ANY engine, **SKIP**
+3. Call `get_open_orders()` — if BUY already pending for symbol, **SKIP**
+
+### Position Ownership
+- Core positions tracked in `trading.db.strategy_positions` (strategy_id like `momentum_surfing`, `multi_scanner`, etc.)
+- Phase 2 (-5% stop) only acts on core-owned positions — do NOT cut rotation or ML positions
+- To identify ownership: check `strategy_positions` in trading.db. If symbol not found there, it belongs to another engine.
+
+### Solo Mode
+When launched via `/start-trading-day` (core only), max positions = 10, no symbol lock needed.
+
+---
+
 ## PHASE 0: Job Execution Tracking (ALWAYS FIRST)
 
 **Every cron run MUST be recorded in the `job_executions` table.**
@@ -112,16 +138,17 @@ For each scanner candidate, determine which strategy applies:
 - +2 points: PctGain scanner
 - +2 points: HotByVolume scanner
 - +1 point: GainSinceOpen scanner
+- +3 bonus: GainSinceOpenLarge + PctGainLarge combo (85.7% WR in Apr 15-16 data)
 - -2 points: Any loss scanner
 - -1 point: Conflicting gain + loss scanners
 
 #### Tiers
 - **Tier 1 (score 5+):** Trade with full size — log as `conviction_tier = "tier1"`
-- **Tier 2 (score 3-4):** **REJECT** — insufficient conviction, log pick as `rejected = 1`
+- **Tier 2 (score 3-4):** Trade with standard size — log as `conviction_tier = "tier2"`
 - **Tier 3 (score 1-2):** Watchlist only, do NOT trade — log pick as `rejected = 1`
 - **Negative:** Blacklist, do NOT trade — log pick as `rejected = 1`
 
-> **Only Tier 1 picks are tradeable.** This was changed on 2026-04-15 to improve win rate (40% → 60% target). Tier 2 picks had too many false signals.
+> **Tier 1 and Tier 2 picks are tradeable.** Updated 2026-04-16: data showed score 3 (Tier 2) had 60% WR and +$34.68 P&L vs score 5 (Tier 1) at 29% WR and -$1.62 P&L. Higher scores were chasing tops; moderate scores caught early movers.
 
 ### Stale Signal Override — Catalyst Confirmation Rule
 
@@ -147,6 +174,18 @@ Log the override reason in `scanner_picks` as: `"Stale signal overridden: cataly
 - Level 2 (Orange): Gain + Loss same day → half size, tighter stops
 - Level 3 (Red): PctGain + PctLoss + HotByVolume → **NO TRADE**, log rejection
 
+### Pre-Tier-1 Watchlist (added 2026-04-16 EOD)
+
+Track Tier 2 candidates (score 3-4) that are **above $5** and have **volume > 1M shares** as "Pre-Tier-1 Watch":
+
+1. Log to `scanner_picks` with `conviction_tier = "pre_tier1_watch"`
+2. Track `consecutive_tier2_count` — how many cycles at Tier 2
+3. Note the missing scanner category (e.g., "needs HotByVolume")
+4. If a watchlist stock appears on the 3rd scanner category next cycle → **PRIORITY Tier 1 entry** (it's been validated over multiple cycles at lower price)
+5. Apply Catalyst Confirmation Check on these candidates to distinguish real movers from noise
+
+**Rationale:** PBM was Tier 2 for 4 cycles before hitting Tier 1. By then it was +178% and exhausted. Early detection at Tier 2 + $5 floor would have identified it when entry was safer (~$5-6 range).
+
 Call `update_job_execution(exec_id, phase_completed=4, candidates_found=N, candidates_rejected=N)`
 
 ---
@@ -161,8 +200,49 @@ Before placing ANY order, run these checks via `get_quote`. Reject if any fail:
 3. **Maximum spread:** (ask - bid) / last <= 3% — reject wide-spread penny stocks
 4. **No warrants/units:** Reject symbols ending in R, W, WS, U suffixes
 5. **$5-$10 confirmation:** For stocks priced $5-$10, require the symbol to have appeared on a scanner in 2+ consecutive runs before entry (prevents FOMO on initial pop — this bracket was 0% win rate on 2026-04-15)
+6. **Extended move filter (added 2026-04-16):** If a stock has gained >100% from its prior close at time of entry, REJECT. Calculate: `(last - close) / close > 1.0`. These are exhausted moves — PBM entered at +178% from open and stopped out in 9 seconds.
+7. **Volume confirmation gate (added 2026-04-16 EOD):** Before entry, verify the stock has genuine volume participation. REJECT if BOTH fail:
+   - Volume today > 2x average (use `get_quote` volume vs close-day estimate)
+   - HotByVolume rank <= 4 (top 5 on volume scanner)
+   If a stock is Tier 1 by scanner score but volume is thin, it's a false signal. Every winning strategy (Momentum Surfing 80% WR, Volume Breakout 67% WR) gates on volume.
+8. **Price action confirmation (added 2026-04-16 EOD):** After all other gates pass, check intraday position:
+   - Calculate: `(last - low) / (high - low)`
+   - REJECT if < 0.50 (stock fading from highs, entering into weakness)
+   - PREFER entries when > 0.60 (holding near highs, momentum intact)
+   Rationale: PBM was fading from $9.97 to $8.00 when entered. ONFO#2 was fading when re-entered. Price position prevents entries on declining momentum.
+
+9. **$10-$20 rejection (added 2026-04-17):** For stocks priced $10-$20, REJECT unless catalyst confirmed (6-condition check from Phase 4). This bracket showed 0% win rate in Apr 15-16 data (BIRD -$1.34 was the only $10-$20 trade).
+10. **$2-$5 priority (added 2026-04-17):** When multiple candidates qualify, PRIORITIZE stocks in the $2-$5 price range. This bracket showed 71.4% win rate and 109% avg return in Apr 15-16 data. If position slots are limited, $2-$5 entries take precedence over other brackets.
 
 Log rejection reason to `scanner_picks` table if any check fails.
+
+### Time-of-Day Entry Windows (added 2026-04-16 EOD)
+
+Based on 2-day performance data, restrict entries by time:
+
+| Window | ET Time | Action | Rationale |
+|--------|---------|--------|-----------|
+| **A: Open** | 9:30-10:30 | OBSERVE ONLY. Build watchlist. No entries unless catalyst confirmed (6-condition check). | Apr 15's 10-loss streak came from batch entries in first 30 min |
+| **B: Prime** | 10:30-12:00 | PRIMARY ENTRY WINDOW. Tier 1 entries allowed, max 2 per cycle. | Best entries (ASTI, ONFO#1) occurred in this window |
+| **C: Midday** | 12:00-14:00 | REDUCED. Only enter FRESH Tier 1 (first cycle at Tier 1, not recycled name). | Recycled names from morning are stale |
+| **D: Late** | 14:00-15:30 | NO NEW ENTRIES. Monitor + protect existing positions only. | PBM entered mid-afternoon at +178%, stopped out in 9 sec |
+| **E: Close** | 15:30-16:00 | EOD WRAP-UP. Run `/end-trading-day`. | Auto-trigger per EOD section |
+
+### Inactive Stop Order Fallback System (added 2026-04-16)
+
+Maintain a **stop blacklist** tracking symbols where STP orders go Inactive:
+
+```
+stop_blacklist = {}  # symbol -> inactive_count
+```
+
+**Stop placement logic (Phase 2 & 6):**
+1. If symbol NOT in blacklist or count < 2: use `place_order(STP)` as normal. If status = "Inactive", increment blacklist count.
+2. If blacklist count >= 2: use `place_trailing_stop_order(trailing_percent=5.0)` instead.
+3. If trailing stop ALSO goes Inactive: flag for **manual monitoring** — every cycle in Phase 6, check quote and place MKT SELL if price < intended stop level.
+4. Log all fallback actions with `strategy_id = "manual_stop_monitoring"`.
+
+**Known Inactive symbols (as of 2026-04-16):** WNW (all cycles), RMSG (4x)
 
 ### Position Limits
 - Maximum **10** open positions at any time (reduced from 15 on 2026-04-15 — forces selectivity)
@@ -254,6 +334,37 @@ At the end of each run:
 2. Log `strategy_runs` for each strategy that was active this cycle
 3. Compute `strategy_kpis` for any strategy that had closed positions
 4. Call `complete_job_execution(exec_id, summary)` with a full summary of all operations performed
+
+---
+
+## End-of-Day Auto-Trigger
+
+**The cron job MUST automatically trigger the end-of-day wrap-up near market close.**
+
+### Time Check (every cycle)
+At the start of each cycle, check the current ET time. If it is between **3:30 PM and 4:00 PM ET** (15:30–16:00):
+
+1. **Run the `/end-trading-day` skill** instead of the normal 8-phase cycle
+2. This performs:
+   - Final risk check (cut losers, apply overnight gap risk rules)
+   - Cancel unfilled/inactive orders
+   - Full trade reconciliation
+   - Daily KPI computation and reporting
+   - Lesson generation if warranted
+   - Strategy/instruction updates if needed
+   - End-of-day summary
+3. After `/end-trading-day` completes, **delete the cron job** (it will be re-created the next trading day by `/start-trading-day`)
+4. Log this as the final `job_execution` with summary = "EOD wrap-up triggered automatically"
+
+### Why This Exists
+Without this, the cron job runs indefinitely after market close, logging empty cycles with null prices. The EOD wrap-up ensures:
+- All trades are reconciled before the day ends
+- Overnight positions are assessed for gap risk
+- Daily lessons are captured while context is fresh
+- The cron job is cleanly stopped
+
+### Time Conversion
+The scanner timestamps are in ET. Use `datetime.now()` and compare against 15:30 ET (19:30 UTC during EDT, 20:30 UTC during EST). If your local time zone differs, convert accordingly. The scanner timestamp format `YYYYMMDD HH:MM:SS` can also be used — if the hour >= 15 and minute >= 30, trigger EOD.
 
 ---
 

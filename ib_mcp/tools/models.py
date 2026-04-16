@@ -135,6 +135,7 @@ async def forecast_scanner_rank(
     scanner: str = "GainSinceOpenLarge",
     prediction_steps: int = 60,
     model: str = "chronos_small",
+    multi_day: bool = False,
     ctx: Context = None,
 ) -> str:
     """Forecast a stock's future scanner rank trajectory using Chronos.
@@ -142,26 +143,50 @@ async def forecast_scanner_rank(
     Predicts where a stock's rank will be on a given scanner in the future.
     Used by Strategy 23 (Rank Forecaster) and Strategy 17 (Transformer).
 
+    When multi_day=True, forecasts daily rank evolution (used by rotation
+    strategies 33/37 for multi-day rank prediction). In this mode,
+    prediction_steps represents days, not intraday snapshots.
+
     Args:
         symbol: Ticker symbol to forecast rank for
         scanner: Scanner name (default GainSinceOpenLarge)
-        prediction_steps: Number of future snapshots to predict (default 60 = ~30 min)
+        prediction_steps: Future snapshots to predict (default 60 intraday, or days if multi_day)
         model: Chronos variant: "chronos_small" (fast), "chronos_bolt", "chronos_large"
+        multi_day: If True, use daily rank history instead of intraday (default False)
     """
     from ib_mcp.models.timeseries import forecast_rank_trajectory
     from ib_mcp.scanner_data import get_symbol_rank_history
 
-    rank_history = get_symbol_rank_history(symbol, scanner)
+    if multi_day:
+        # Query daily best rank from rotation_scanner.db streak_tracker
+        # or fall back to daily scanner archives
+        from ib_mcp.scanner_data import get_symbol_daily_rank_history
+        try:
+            rank_history = get_symbol_daily_rank_history(symbol, scanner)
+        except (AttributeError, ImportError):
+            # Fallback: use intraday history sampled at daily granularity
+            rank_history = get_symbol_rank_history(symbol, scanner)
+            if len(rank_history) > 50:
+                # Sample roughly once per day (assuming ~40 snapshots/day)
+                rank_history = rank_history[::40]
+        # Use smaller prediction steps for daily forecasts
+        if prediction_steps > 10:
+            prediction_steps = 5  # 5 trading days ahead
+    else:
+        rank_history = get_symbol_rank_history(symbol, scanner)
 
     if len(rank_history) < 20:
-        return json.dumps({
-            "error": f"Insufficient rank history for {symbol} on {scanner} "
-                     f"(got {len(rank_history)}, need 20+)",
-        })
+        min_needed = 5 if multi_day else 20
+        if len(rank_history) < min_needed:
+            return json.dumps({
+                "error": f"Insufficient rank history for {symbol} on {scanner} "
+                         f"(got {len(rank_history)}, need {min_needed}+)",
+            })
 
     result = forecast_rank_trajectory(rank_history, prediction_steps, model_key=model)
     result["symbol"] = symbol
     result["scanner"] = scanner
+    result["multi_day"] = multi_day
     return json.dumps(result, indent=2)
 
 
@@ -221,23 +246,41 @@ async def forecast_price_monte_carlo(
 @mcp.tool()
 async def classify_market_regime(
     scanner_summary: str = "",
+    method: str = "zero_shot",
+    breadth: int = 0,
+    gl_ratio: float = 0.0,
+    volume_level: float = 0.5,
     ctx: Context = None,
 ) -> str:
     """Classify current market regime from scanner state.
 
-    Uses zero-shot classification (BART-MNLI) to determine if the market
-    is in: rally, chop, selloff, drift, earnings-driven, or macro-shock mode.
-    Returns sub-strategy recommendation for each regime.
-    Used by Strategy 15 and 25.
+    Supports two methods:
+    - "zero_shot" (default): BART-MNLI text classification into rally/chop/selloff/etc.
+    - "hmm": 3-state Gaussian HMM into bull_momentum/bear_mean_reversion/range_bound.
+      The HMM method is preferred for rotation strategies as it provides
+      sub-strategy routing recommendations.
 
     Args:
         scanner_summary: Natural language summary of current scanner state.
             If empty, auto-generates from latest scanner data.
+        method: "zero_shot" (default, text-based) or "hmm" (numeric features)
+        breadth: Market breadth for HMM method (unique tickers, e.g. 2000)
+        gl_ratio: Gain/loss ratio for HMM method (e.g. 1.2)
+        volume_level: Normalized volume 0-1 for HMM method (e.g. 0.7)
     """
+    if method == "hmm":
+        from ib_mcp.models.classifiers import detect_hmm_regime
+        result = detect_hmm_regime(
+            breadth=float(breadth) if breadth > 0 else 2000.0,
+            gl_ratio=gl_ratio if gl_ratio > 0 else 1.0,
+            volume_level=volume_level,
+        )
+        return json.dumps(result, indent=2)
+
+    # Default: zero-shot classification
     from ib_mcp.models.classifiers import classify_market_regime as _classify
 
     if not scanner_summary:
-        # Auto-generate from scanner data
         from ib_mcp.scanner_data import generate_scanner_summary
         scanner_summary = generate_scanner_summary()
 
@@ -358,6 +401,198 @@ async def index_scanner_day(
         "summary_preview": summary[:300],
         "total_days_indexed": index.count(),
     }, indent=2)
+
+
+@mcp.tool()
+async def get_sentiment_gate(
+    symbol: str,
+    model: str = "finbert",
+    threshold: float = -0.3,
+    ctx: Context = None,
+) -> str:
+    """Quick sentiment check returning approve/reject gate for trade entry.
+
+    Fetches recent headlines for a symbol, scores them with FinBERT, and
+    returns a binary approve/reject decision based on average sentiment.
+    Used as a universal conviction modifier across all rotation strategies.
+
+    Args:
+        symbol: Ticker symbol (e.g. "NVDA")
+        model: Sentiment model (default "finbert")
+        threshold: Minimum avg sentiment to approve (default -0.3; reject if below)
+    """
+    from ib_mcp.models.sentiment import analyze_sentiment
+    from ib_mcp.connection import IBContext
+    from ib_insync import Stock
+
+    ib_ctx: IBContext = ctx.request_context.lifespan_context
+    ib = ib_ctx.ib
+
+    contract = Stock(symbol, "SMART", "USD")
+    qualified = await ib.qualifyContractsAsync(contract)
+    if not qualified:
+        return json.dumps({"gate": "approve", "reason": "no_contract", "avg_sentiment": 0.0})
+
+    raw_headlines = await ib.reqHistoricalNewsAsync(
+        conId=qualified[0].conId,
+        providerCodes="BRFG+BRFUPDN+DJNL",
+        startDateTime="",
+        endDateTime="",
+        totalResults=5,
+    )
+
+    if not raw_headlines:
+        # No news = neutral, approve by default
+        return json.dumps({
+            "symbol": symbol,
+            "gate": "approve",
+            "reason": "no_headlines",
+            "avg_sentiment": 0.0,
+            "headline_count": 0,
+        })
+
+    texts = [h.headline for h in raw_headlines]
+    results = analyze_sentiment(texts, model_key=model)
+
+    sentiments = [r.sentiment for r in results]
+    avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0.0
+
+    pos = sum(1 for s in sentiments if s > 0.1)
+    neg = sum(1 for s in sentiments if s < -0.1)
+    neu = len(sentiments) - pos - neg
+
+    gate = "approve" if avg_sentiment >= threshold else "reject"
+
+    return json.dumps({
+        "symbol": symbol,
+        "gate": gate,
+        "avg_sentiment": round(avg_sentiment, 4),
+        "headline_count": len(raw_headlines),
+        "positive_count": pos,
+        "negative_count": neg,
+        "neutral_count": neu,
+        "threshold": threshold,
+        "model": model,
+    }, indent=2)
+
+
+@mcp.tool()
+async def forecast_volume_trajectory(
+    symbol: str,
+    duration: str = "1 D",
+    bar_size: str = "5 mins",
+    prediction_length: int = 12,
+    model: str = "chronos_bolt",
+    ctx: Context = None,
+) -> str:
+    """Forecast future volume trajectory to predict if a volume surge will sustain.
+
+    Uses Chronos time series model on historical volume data. Returns a trend
+    classification (rising/falling/flat) and predicted volume values.
+    Used by Strategy 32 (Volume Surge) to skip signals where volume is fading.
+
+    Args:
+        symbol: Ticker symbol (e.g. "NVDA")
+        duration: How far back to fetch volume history (default "1 D")
+        bar_size: Bar size for volume data (default "5 mins")
+        prediction_length: Steps ahead to forecast (default 12 = 60 min at 5-min bars)
+        model: Chronos variant (default "chronos_bolt" for speed)
+    """
+    from ib_mcp.connection import IBContext
+    from ib_mcp.models.timeseries import forecast_volume_series
+    from ib_insync import Stock
+
+    ib_ctx: IBContext = ctx.request_context.lifespan_context
+    ib = ib_ctx.ib
+
+    contract = Stock(symbol, "SMART", "USD")
+    qualified = await ib.qualifyContractsAsync(contract)
+    if not qualified:
+        return json.dumps({"error": f"Could not find contract for {symbol}"})
+
+    bars = await ib.reqHistoricalDataAsync(
+        qualified[0], endDateTime="", durationStr=duration,
+        barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True,
+    )
+
+    if not bars or len(bars) < 20:
+        return json.dumps({"error": f"Insufficient volume history for {symbol}"})
+
+    volumes = [float(b.volume) for b in bars]
+    result = forecast_volume_series(
+        volumes, prediction_length=prediction_length, model_key=model,
+    )
+    result["symbol"] = symbol
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def classify_catalyst_topic(
+    headline: str,
+    ctx: Context = None,
+) -> str:
+    """Classify a news headline by financial topic to distinguish catalyst types.
+
+    Uses a FinBERT-based topic classifier to categorize headlines into topics
+    like earnings, M&A, macro, analyst actions, etc. Returns whether the
+    catalyst is fundamental (more likely to persist) vs technical.
+    Used by rotation strategies 34-36 for conviction scoring.
+
+    Args:
+        headline: News headline text to classify
+    """
+    from ib_mcp.models.sentiment import classify_topic
+
+    results = classify_topic([headline])
+    if results:
+        return json.dumps(results[0], indent=2)
+    return json.dumps({"error": "Classification failed"})
+
+
+@mcp.tool()
+async def detect_regime_hmm(
+    scanner_summary: str = "",
+    breadth: int = 0,
+    gl_ratio: float = 0.0,
+    volume_level: float = 0.5,
+    ctx: Context = None,
+) -> str:
+    """Detect market regime using Hidden Markov Model (3-state Gaussian HMM).
+
+    Classifies market into: bull_momentum, bear_mean_reversion, or range_bound.
+    Returns routing recommendations for which rotation sub-strategies to prioritize.
+    Used by Strategy 31 master rotation controller (Phase 1).
+
+    Args:
+        scanner_summary: Natural language scanner summary (auto-generates features if provided)
+        breadth: Market breadth — unique tickers on scanners today (e.g. 2000)
+        gl_ratio: Gain/loss scanner ratio (e.g. 1.2)
+        volume_level: Normalized volume level 0-1 (e.g. 0.7 = above average)
+    """
+    from ib_mcp.models.classifiers import detect_hmm_regime
+
+    if scanner_summary and (breadth == 0 or gl_ratio == 0.0):
+        # Try to extract numeric features from summary text
+        import re
+        breadth_match = re.search(r'(\d{3,5})\s*(?:unique|tickers|breadth)', scanner_summary)
+        gl_match = re.search(r'(?:G/L|gain.?loss|ratio)[:\s]*(\d+\.?\d*)', scanner_summary, re.IGNORECASE)
+        if breadth_match:
+            breadth = int(breadth_match.group(1))
+        if gl_match:
+            gl_ratio = float(gl_match.group(1))
+
+        # Defaults if still missing
+        if breadth == 0:
+            breadth = 2000
+        if gl_ratio == 0.0:
+            gl_ratio = 1.0
+
+    result = detect_hmm_regime(
+        breadth=float(breadth),
+        gl_ratio=gl_ratio,
+        volume_level=volume_level,
+    )
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()

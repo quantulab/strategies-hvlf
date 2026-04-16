@@ -1,4 +1,4 @@
-"""Scanner data parser for \\Station001\DATA\hvlf\rotating directory.
+r"""Scanner data parser for \\Station001\DATA\hvlf\rotating directory.
 
 Provides structured access to scanner CSV data for ML model consumption.
 """
@@ -10,7 +10,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCANNER_BASE_ROTATING = Path("//Station001/DATA/hvlf/rotating")
+def _get_scanner_base() -> Path:
+    """Get scanner base path from config, falling back to default."""
+    from ib_mcp.config import IBConfig
+    config = IBConfig()
+    if config.scanner_path:
+        return Path(config.scanner_path)
+    return Path("//Station001/DATA/hvlf/rotating")  # legacy default
+
+
+SCANNER_BASE_ROTATING = _get_scanner_base()
 
 # All scanner types in the rotating directory
 SCANNER_TYPES = [

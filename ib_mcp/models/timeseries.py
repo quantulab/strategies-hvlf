@@ -217,6 +217,64 @@ def forecast_price_distribution(
     }
 
 
+def forecast_volume_series(
+    volume_history: list[float],
+    prediction_length: int = 12,
+    model_key: str = "chronos_bolt",
+) -> dict:
+    """Forecast future volume trajectory to predict if a volume surge will sustain.
+
+    Used by Strategy 32 (Volume Surge Entry) to skip signals where volume
+    is predicted to decline.
+
+    Args:
+        volume_history: Historical volume values (e.g., 5-min bar volumes)
+        prediction_length: Steps ahead to forecast (default 12 = 60 min at 5-min bars)
+        model_key: Chronos variant
+
+    Returns:
+        Dict with predicted volumes, trend classification, and slope
+    """
+    result = forecast_chronos(
+        context=[float(v) for v in volume_history],
+        prediction_length=prediction_length,
+        model_key=model_key,
+    )
+
+    predicted = result.point_forecast
+    current_vol = volume_history[-1]
+
+    # Compute trend via linear regression slope on predicted values
+    if len(predicted) >= 3:
+        x = np.arange(len(predicted), dtype=np.float64)
+        y = np.array(predicted, dtype=np.float64)
+        slope = float(np.polyfit(x, y, 1)[0])
+        # Normalize slope relative to current volume
+        norm_slope = slope / max(current_vol, 1.0)
+    else:
+        slope = 0.0
+        norm_slope = 0.0
+
+    if norm_slope > 0.02:
+        trend = "rising"
+    elif norm_slope < -0.02:
+        trend = "falling"
+    else:
+        trend = "flat"
+
+    return {
+        "current_volume": current_vol,
+        "predicted_volumes": [round(v, 1) for v in predicted],
+        "volume_trend": trend,
+        "trend_slope": round(norm_slope, 4),
+        "raw_slope": round(slope, 2),
+        "predicted_avg": round(float(np.mean(predicted)), 1),
+        "confidence_low": [round(v, 1) for v in result.quantile_low],
+        "confidence_high": [round(v, 1) for v in result.quantile_high],
+        "model": model_key,
+    }
+
+
 def multi_scanner_rank_forecast(
     rank_histories: dict[str, list[int]],
     prediction_steps: int = 60,

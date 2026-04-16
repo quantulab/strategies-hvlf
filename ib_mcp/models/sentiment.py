@@ -195,6 +195,68 @@ def score_headlines_for_symbol(
     }
 
 
+def classify_topic(
+    texts: list[str],
+    model_key: str = "finbert_topic",
+) -> list[dict]:
+    """Classify financial text by topic category.
+
+    Uses nickmuchi/finbert-tone-finetuned-finance-topic-classification
+    to categorize headlines/text into topics like earnings, M&A, macro, etc.
+    Used by rotation strategies 34-36 to distinguish catalyst types.
+
+    Args:
+        texts: List of text strings (headlines, articles)
+        model_key: Topic classification model (default "finbert_topic")
+
+    Returns:
+        List of dicts with topic, confidence, and all topic scores
+    """
+    model = registry.get_model(model_key)
+    tokenizer = registry.get_tokenizer(model_key)
+
+    results = []
+    for text in texts:
+        inputs = tokenizer(
+            text, padding=True, truncation=True, max_length=512,
+            return_tensors="pt",
+        ).to(DEVICE)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=-1)
+
+        id2label = model.config.id2label
+        pred_idx = probs[0].argmax().item()
+        pred_label = id2label[pred_idx]
+        confidence = probs[0][pred_idx].item()
+
+        all_topics = {
+            id2label[i]: round(probs[0][i].item(), 4)
+            for i in range(len(id2label))
+        }
+
+        # Classify as fundamental vs technical catalyst
+        fundamental_keywords = {
+            "earnings", "revenue", "profit", "FDA", "approval", "acquisition",
+            "merger", "buyback", "dividend", "guidance", "upgrade", "IPO",
+            "analyst", "rating", "partnership",
+        }
+        is_fundamental = any(
+            kw in pred_label.lower() for kw in fundamental_keywords
+        )
+
+        results.append({
+            "text": text,
+            "topic": pred_label,
+            "confidence": round(confidence, 4),
+            "is_fundamental_catalyst": is_fundamental,
+            "all_topics": all_topics,
+        })
+
+    return results
+
+
 def detect_news_velocity(
     headlines: list[dict],
     window_minutes: int = 10,

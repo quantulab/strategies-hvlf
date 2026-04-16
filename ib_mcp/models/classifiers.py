@@ -327,6 +327,155 @@ COMPANY_TICKER_MAP = {
 }
 
 
+# HMM Regime Detection state labels
+HMM_REGIME_LABELS = ["bull_momentum", "bear_mean_reversion", "range_bound"]
+
+# Rotation sub-strategy routing by HMM regime
+HMM_REGIME_ROUTING = {
+    "bull_momentum": {
+        "prioritize": ["rotation_streak_continuation", "rotation_volume_surge", "rotation_elite_accumulation"],
+        "deprioritize": ["rotation_whipsaw_fade"],
+        "position_size_multiplier": 1.0,
+    },
+    "bear_mean_reversion": {
+        "prioritize": ["rotation_whipsaw_fade", "rotation_premarket_persist"],
+        "deprioritize": ["rotation_streak_continuation", "rotation_elite_accumulation"],
+        "position_size_multiplier": 0.5,
+    },
+    "range_bound": {
+        "prioritize": ["rotation_whipsaw_fade", "rotation_premarket_persist", "rotation_volume_surge"],
+        "deprioritize": [],
+        "position_size_multiplier": 0.75,
+    },
+}
+
+
+def detect_hmm_regime(
+    breadth: float,
+    gl_ratio: float,
+    volume_level: float,
+    historical_features: list[list[float]] | None = None,
+) -> dict:
+    """Detect market regime using a 3-state Gaussian HMM.
+
+    Classifies the market into: bull_momentum, bear_mean_reversion, range_bound.
+    Used by Strategy 31 master rotation controller (Phase 1) to route capital.
+
+    Args:
+        breadth: Current market breadth (unique tickers on scanners)
+        gl_ratio: Gain/loss scanner ratio
+        volume_level: Normalized volume level (0-1 scale)
+        historical_features: Optional list of [breadth, gl_ratio, volume] from
+            past days for model fitting. If None, uses default priors.
+
+    Returns:
+        Dict with regime label, confidence, transition probabilities, routing
+    """
+    import numpy as np
+
+    try:
+        from hmmlearn.hmm import GaussianHMM
+    except ImportError:
+        # Fallback: simple rule-based classification matching the HMM labels
+        logger.warning("hmmlearn not installed, falling back to rule-based regime detection")
+        if gl_ratio > 1.2:
+            regime = "bull_momentum"
+            confidence = min(gl_ratio / 2.0, 0.95)
+        elif gl_ratio < 0.8:
+            regime = "bear_mean_reversion"
+            confidence = min((2.0 - gl_ratio) / 2.0, 0.95)
+        else:
+            regime = "range_bound"
+            confidence = 0.6
+
+        routing = HMM_REGIME_ROUTING.get(regime, HMM_REGIME_ROUTING["range_bound"])
+        return {
+            "regime": regime,
+            "confidence": round(confidence, 4),
+            "method": "rule_based_fallback",
+            "transition_probs": {},
+            "routing": routing,
+        }
+
+    current_obs = np.array([[breadth, gl_ratio, volume_level]])
+
+    if historical_features and len(historical_features) >= 10:
+        X = np.array(historical_features)
+        # Fit HMM on historical data
+        model = GaussianHMM(
+            n_components=3,
+            covariance_type="diag",
+            n_iter=100,
+            random_state=42,
+        )
+        model.fit(X)
+    else:
+        # Use default priors based on typical market behavior
+        model = GaussianHMM(
+            n_components=3,
+            covariance_type="diag",
+            n_iter=1,
+            init_params="",
+        )
+        # Set means: bull (high breadth, high GL, high vol), bear (low, low, high), range (mid, mid, mid)
+        model.means_ = np.array([
+            [2500, 1.5, 0.7],   # bull_momentum
+            [1500, 0.6, 0.8],   # bear_mean_reversion
+            [2000, 1.0, 0.5],   # range_bound
+        ])
+        model.covars_ = np.array([
+            [250000, 0.1, 0.05],
+            [250000, 0.1, 0.05],
+            [250000, 0.1, 0.05],
+        ])
+        model.startprob_ = np.array([0.4, 0.2, 0.4])
+        model.transmat_ = np.array([
+            [0.7, 0.1, 0.2],
+            [0.1, 0.7, 0.2],
+            [0.2, 0.2, 0.6],
+        ])
+
+    # Predict state for current observation
+    try:
+        state_probs = model.predict_proba(current_obs)[0]
+        predicted_state = int(np.argmax(state_probs))
+    except Exception:
+        # If prediction fails, default to range_bound
+        state_probs = np.array([0.33, 0.33, 0.34])
+        predicted_state = 2
+
+    regime = HMM_REGIME_LABELS[predicted_state]
+    confidence = float(state_probs[predicted_state])
+
+    # Get transition probabilities from current state
+    try:
+        trans_probs = {
+            HMM_REGIME_LABELS[i]: round(float(model.transmat_[predicted_state, i]), 4)
+            for i in range(3)
+        }
+    except Exception:
+        trans_probs = {}
+
+    routing = HMM_REGIME_ROUTING.get(regime, HMM_REGIME_ROUTING["range_bound"])
+
+    return {
+        "regime": regime,
+        "confidence": round(confidence, 4),
+        "method": "hmm",
+        "state_probabilities": {
+            HMM_REGIME_LABELS[i]: round(float(state_probs[i]), 4)
+            for i in range(3)
+        },
+        "transition_probs": trans_probs,
+        "routing": routing,
+        "features": {
+            "breadth": breadth,
+            "gl_ratio": gl_ratio,
+            "volume_level": volume_level,
+        },
+    }
+
+
 def entities_to_tickers(entities: list[Entity]) -> list[dict]:
     """Map extracted entities to potential ticker symbols.
 

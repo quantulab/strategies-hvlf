@@ -28,12 +28,24 @@ Assign points based on scanner appearances:
 - **Negative Score:** Blacklist — do not trade under any strategy
 
 ## Entry Rules
-1. Stock must score Tier 1 or Tier 2
+1. Stock must score **Tier 1 ONLY** (Tier 2 rejected as of 2026-04-15 — too many false signals)
 2. Must appear on 3+ DIFFERENT scanner categories (not the same scanner on repeat checks)
 3. At least one appearance must be on a Volume scanner (volume confirms the move)
 4. At least one appearance must be on a Gain scanner (direction confirms)
 5. Enter using the rules of whichever primary strategy (1-6) best fits the setup
 6. Multi-scanner confirmation upgrades position size by 25% vs the primary strategy's default
+
+### Additional Entry Gates (added 2026-04-16 EOD — improve 25% win rate)
+7. **Volume confirmation:** Volume today must be > 2x average daily OR stock must be in top 5 of HotByVolume (rank <= 4). Scanner rank alone is insufficient — every 80%+ WR strategy gates on volume.
+8. **Price action confirmation:** Intraday position `(last - low) / (high - low)` must be > 0.50. Reject if stock is fading from highs. PBM and ONFO#2 both entered while fading.
+9. **Extended move filter:** Reject if gain from prior close > 100%. Calculate `(last - close) / close > 1.0`. PBM at +178% stopped out in 9 seconds.
+10. **Time-of-day windows:** Only enter during Window B (10:30-12:00 ET) or Window C (12:00-14:00 fresh Tier 1 only). No entries before 10:30 (observe) or after 14:00 (protect only).
+
+### Graduated Conviction — Pre-Tier-1 Watchlist (added 2026-04-16 EOD)
+Track Tier 2 candidates (score 3-4) that are **above $5** with **volume > 1M** as "Pre-Tier-1 Watch":
+- If a watchlist stock graduates to Tier 1 next cycle, it gets **priority entry** (multi-cycle validation at lower price)
+- This prevents the PBM problem: waiting for volume confirmation until the stock is already +178% exhausted
+- Log with `conviction_tier = "pre_tier1_watch"` in scanner_picks
 
 ## Position Sizing
 - Tier 1: Primary strategy size + 25% bonus
