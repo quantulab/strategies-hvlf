@@ -253,7 +253,7 @@ For each position, compute `unrealized_pnl_pct` from entry price, then apply:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
+| +5% to +10% | Breakeven (entry price) |
 | +20% to +50% | +10% above entry (entry × 1.10) |
 | +50% to +100% | MAX(entry × 1.25, peak_price × 0.80) |
 | >+100% | Trail at peak_price × 0.75 |

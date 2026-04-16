@@ -228,8 +228,8 @@ For each open `rotation_streak_continuation` position:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
 | +50% to +100% | MAX(+25% above entry, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
 
@@ -319,3 +319,33 @@ A ticker may streak on TopGainers AND TopLosers alternating days. Always check w
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — ratchet stops |
 | `get_scanner_dates()` | Phase 3 |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **NoxTrader: LSTM Momentum Prediction** | [2310.00747](https://arxiv.org/abs/2310.00747) | LSTM for return momentum prediction — can predict streak sustainability and expected return magnitude |
+| **Is Factor Momentum More than Stock Momentum?** | [2009.04824](https://arxiv.org/abs/2009.04824) | Factor momentum works at short lags — validates multi-day streak continuation thesis and suggests factor-level streak tracking |
+| **Time-Series Momentum with Deep Multi-Task Learning** | [2306.13661](https://hf.co/papers/2306.13661) | Multi-task learning jointly optimizes momentum portfolio construction AND volatility forecasting — apply to jointly predict streak survival probability + expected return |
+| **MTMD: Multi-Scale Temporal Memory** | [2212.08656](https://hf.co/papers/2212.08656) | Temporal memory captures self-similarity in stock trends — day-5 streaks that "look like" historically successful patterns get conviction boost |
+| **Intraday Patterns in Cross-Section Returns** | [1005.3535](https://arxiv.org/abs/1005.3535) | Half-hour return continuation lasting 40+ trading days — validates persistence of intraday momentum patterns underlying streaks |
+| **When Alpha Breaks: Safe Stock Rankers** | [2603.13252](https://arxiv.org/abs/2603.13252) | Two-level uncertainty for safe deployment during regime shifts — detect when streak model is unreliable and should be paused |
+| **Deep Learning for Cross-Section Returns** | [1801.01777](https://arxiv.org/abs/1801.01777) | Neural nets for cross-sectional return prediction — improve rank prediction component of streak signals |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Detect news catalysts sustaining streaks — positive sentiment flow confirms institutional interest |
+| [ahmedrachid/FinancialBERT-Sentiment-Analysis](https://hf.co/ahmedrachid/FinancialBERT-Sentiment-Analysis) (22K downloads) | Deeper financial-specific sentiment for streak tickers with earnings/guidance events |
+
+### Proposed Enhancements
+
+1. **Streak Survival Classifier:** Train multi-task model (paper 2306.13661) that jointly predicts: (a) probability streak continues tomorrow, (b) expected return if it does. Features: streak_days, rank trajectory, volume trend, whipsaw history, market regime, sector momentum. Use survival probability as dynamic conviction factor.
+2. **Temporal Pattern Matching:** Apply MTMD temporal memory (paper 2212.08656) to encode current streak "shape" (rank trajectory over days) and match against historical successful/failed streaks. Similar-to-successful patterns get +2 conviction, similar-to-failed get -2.
+3. **Regime-Aware Streak Filtering:** Implement the "When Alpha Breaks" uncertainty framework (paper 2603.13252) to detect when cross-sectional rank models are unreliable. During detected regime shifts, require score 7+ instead of 5+ for Tier 1.
+4. **Factor Momentum Overlay:** Track factor-level momentum (paper 2009.04824) — if the factor driving the streak (e.g., tech momentum, energy rotation) is itself in a positive trend, add +1 conviction.

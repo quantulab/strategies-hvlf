@@ -174,7 +174,7 @@ Log rejection reason to `scanner_picks` table if any check fails.
 ### Order Structure
 - Entry: MKT BUY or MKT SELL
 - Stop Loss: ATR-based when available, otherwise 5% from entry (STP order)
-- Take Profit: ATR-based when available, otherwise 10% from entry (LMT order)
+- Take Profit: **NO fixed take-profit LMT order** — profit is protected by the trailing stop ratchet in Phase 6
 
 ### Post-Order Protection Check (MANDATORY)
 After placing ANY entry order, immediately place a protective GTC STP SELL order:
@@ -201,16 +201,16 @@ For each open position every run:
 4. Check overnight gap risk rules (Strategy 10) near market close
 5. **Profit Protection — Trailing Stop Ratchet (MANDATORY)**
 
-### Profit Protection Tiers (added 2026-04-15 — AGAE lost +26% gain, exited at -7%)
+### Profit Protection Tiers (updated 2026-04-16 — replaced fixed 10% LMT take-profit with trailing ratchet to let winners run)
 
 After getting the quote, compute `unrealized_pnl_pct` from entry price. Apply the highest matching tier:
 
 | Unrealized Gain | Required Stop Level | Action |
 |-----------------|---------------------|--------|
-| **+10% to +20%** | Breakeven (entry price) | Move stop to entry. Lock in zero-loss. |
-| **+20% to +50%** | +10% above entry | Move stop to entry × 1.10. Lock in partial profit. |
-| **+50% to +100%** | MAX(+25% above entry, trail 20% below peak) | Use the higher of entry × 1.25 or peak × 0.80. |
-| **>+100%** | Trail 25% below peak | Stop = peak_price × 0.75. Aggressive trailing. |
+| **+5% to +10%** | Breakeven (entry price) | Move stop to entry. Lock in zero-loss. |
+| **+10% to +20%** | Trail 2% below current price | Stop = current_price × 0.98. Tight trail lets winners run while locking ~8%+ gain. |
+| **+20% to +50%** | MAX(trail 2% below current, +10% above entry) | Stop = MAX(current_price × 0.98, entry × 1.10). Never give back below +10%. |
+| **+50%+** | Trail 3% below peak | Stop = peak_price × 0.97. Slightly wider trail for big runners to avoid noise exits. |
 
 **Rules:**
 - Stops only ratchet UP, never down — if current stop is already above the tier level, keep it
@@ -220,9 +220,11 @@ After getting the quote, compute `unrealized_pnl_pct` from entry price. Apply th
 - This applies to ALL positions regardless of strategy — profit protection overrides strategy-specific stops when it produces a tighter (higher) stop
 
 **Example (AGAE failure this rule prevents):**
-- Entry $0.50, position reaches +26% ($0.63) → stop moves to $0.55 (+10% above entry)
-- If position later reaches +50% ($0.75) → stop moves to $0.60 (MAX of $0.625, peak×0.80)
-- Reversal to $0.55 hits the ratcheted stop → exit at +10% instead of -7%
+- Entry $0.50, position reaches +10% ($0.55) → stop moves to $0.539 (trail 2% below $0.55)
+- Position keeps running to +26% ($0.63) → stop moves to $0.617 (trail 2% below $0.63)
+- Position keeps running to +50% ($0.75) → stop moves to $0.728 (trail 3% below peak $0.75)
+- Reversal to $0.728 hits the ratcheted stop → exit at +45.5% instead of -7%
+- If it reversed at +12% instead ($0.56) → stop at $0.549, exit at ~+9.8% instead of riding it down
 
 Call `update_job_execution(exec_id, phase_completed=6, positions_monitored=N, snapshots_logged=N)`
 

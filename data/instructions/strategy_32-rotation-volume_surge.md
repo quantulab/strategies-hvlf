@@ -231,8 +231,8 @@ For each open `rotation_volume_surge` position:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
 | +50% to +100% | MAX(+25% above entry, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
 
@@ -327,3 +327,33 @@ Signals where gain scanner fires within 15 min of volume signal capture the shar
 | `place_order(symbol, action, quantity, order_type, stop_price)` | Phase 2, Phase 5 |
 | `modify_order(order_id, ...)` | Phase 6 — ratchet stops |
 | `get_scanner_dates()` | Phase 3 — confirm today's data |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **Hidden Order in Trades Predicts Price Moves** | [2512.15720](https://arxiv.org/abs/2512.15720) | Order-flow entropy from 15-state Markov model predicts price move magnitude — add as conviction factor for volume signals |
+| **Emergence of Intraday Lead-Lag Relationships** | [1401.0462](https://arxiv.org/abs/1401.0462) | Statistically validated lead-lag detection framework — replace fixed 120-min avg with dynamic per-ticker lead-lag estimation |
+| **Forecasting Intraday Volume with ML** | [2505.08180](https://arxiv.org/abs/2505.08180) | ML models (gradient boosting, LSTM) for intraday volume prediction — predict WHICH volume spikes convert to gain scanner appearances |
+| **LIFT: Learning from Leading Indicators** | [2401.17548](https://hf.co/papers/2401.17548) | Framework to identify and use leading indicators in time series — directly applicable to modeling volume as a leading indicator for price |
+| **Stockformer: Price-Volume Factor Model** | [2401.06139](https://hf.co/papers/2401.06139) | Wavelet transform + multi-task self-attention for price-volume relationships — encode volume surge patterns as multi-scale features |
+| **Deep Learning for VWAP Execution** | [2502.13722](https://arxiv.org/abs/2502.13722) | DL volume curve prediction — can predict intraday volume distribution to time entries when volume surges are most likely to convert |
+| **Lead-Lag via Stop-and-Reverse-MinMax** | [1504.06235](https://arxiv.org/abs/1504.06235) | Mathematical framework for formalizing and detecting lead-lag relationships between any two time series |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Score news sentiment for volume surge tickers — positive news + volume surge = higher conviction |
+| [nickmuchi/finbert-tone-finetuned-finance-topic-classification](https://hf.co/nickmuchi/finbert-tone-finetuned-finance-topic-classification) | Classify catalyst type (earnings, M&A, macro) to distinguish news-driven vs. flow-driven volume surges |
+
+### Proposed Enhancements
+
+1. **Dynamic Lead-Time Model:** Replace static 120-min average lead time with per-ticker ML model using LIFT framework. Features: historical lead times, volume scanner count, cap tier, day-of-week, market breadth. Output: predicted lead time distribution per ticker.
+2. **Order-Flow Entropy Conviction Factor:** Implement 15-state Markov model from arxiv 2512.15720 to compute order-flow entropy. High entropy = more predictable price magnitude. Add as +2 conviction bonus when entropy exceeds threshold.
+3. **Volume Conversion Classifier:** Train gradient boosting or xLSTM on historical volume→gain transitions. Features: volume spike magnitude, # of volume scanners, spread, market cap, whipsaw history. Output: probability of gain scanner appearance within 180 min.
+4. **News Sentiment Filter:** Use distilroberta financial sentiment model to score headlines for volume surge tickers. Positive sentiment + volume surge = +1 conviction. Negative sentiment + volume surge = -1 (selling pressure, not accumulation).

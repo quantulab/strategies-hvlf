@@ -217,8 +217,8 @@ For each open `rotation_premarket_persist` position:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
 | +50% to +100% | MAX(+25% above entry, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
 
@@ -311,3 +311,33 @@ Report §8: 311,303 transitions from HighOpenGap → LossSinceOpen. If a pre-mar
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stop |
 | `get_scanner_dates()` | Phase 3 |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **Universal Price Formation from Deep Learning** | [1803.06917](https://hf.co/papers/1803.06917) | Universal and stationary price formation mechanism learned from order books — applicable to modeling the pre-market→open transition as a universal pattern |
+| **Empirical Regularities of Opening Call Auction** | [0905.0582](https://arxiv.org/abs/0905.0582) | Statistical patterns in opening auctions — directly models the pre-market price discovery process and persistence mechanics |
+| **Pre-training Time Series with Stock Data** | [2506.16746](https://hf.co/papers/2506.16746) | Pre-trained transformer (SSPT) for stock selection — applicable to scoring pre-market movers with transfer-learned representations |
+| **Proactive Model Adaptation Against Concept Drift** | [2412.08435](https://hf.co/papers/2412.08435) | Handles non-stationarity in time series forecasting — critical since persistence rates vary day-to-day (92%-100%) |
+| **Alpha-R1: Alpha Screening with LLM Reasoning** | [2512.23515](https://hf.co/papers/2512.23515) | RL-trained 8B reasoning model for context-aware alpha screening — could dynamically screen pre-market movers with market-condition awareness |
+| **Adaptive Market Intelligence: MoE Framework** | [2508.02686](https://hf.co/papers/2508.02686) | Volatility-aware MoE — route pre-market signals differently on high-volatility vs. low-volatility days |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Score pre-market news — positive news-driven movers persist more reliably than technical movers |
+| [ahmedrachid/FinancialBERT-Sentiment-Analysis](https://hf.co/ahmedrachid/FinancialBERT-Sentiment-Analysis) (22K downloads) | Financial-specific sentiment for earnings/guidance pre-market movers |
+| [nickmuchi/finbert-tone-finetuned-finance-topic-classification](https://hf.co/nickmuchi/finbert-tone-finetuned-finance-topic-classification) | Classify pre-market catalyst type — earnings gaps persist differently than technical gaps |
+
+### Proposed Enhancements
+
+1. **Dynamic Persistence Probability Model:** Replace fixed 95.7% base rate with a per-ticker, per-day binary classifier. Features: gap size, pre-market volume, whipsaw history, market breadth, day-of-week, VIX level, sector momentum, news sentiment score. Output: probability of persistence at 9:35 AM. Only trade when model predicts >90%.
+2. **Concept Drift Detector:** Implement concept drift detection (paper 2412.08435) to identify when persistence rate regime has shifted. If detected drift (e.g., persistence rate dropping below 90% over recent sessions), auto-tighten entry criteria or disable strategy.
+3. **News Catalyst Scoring:** Use financial sentiment model to classify pre-market movers into: (a) news-driven positive (earnings beat, upgrade) — highest persistence, (b) news-driven negative context (sector sympathy, macro) — moderate persistence, (c) no-news technical — filter more aggressively against whipsaw list.
+4. **Opening Auction Pattern Model:** Apply opening auction research (paper 0905.0582) to model the price discovery mechanism at open. Tickers with orderly pre-market price discovery (narrow spread, convergent quotes) persist more than chaotic ones. Add as conviction factor.

@@ -359,6 +359,39 @@ async def get_closed_trades(ctx: Context, save_to_db: bool = True) -> str:
         conn.commit()
         conn.close()
 
+    # Include multi-day trades from strategy_positions that were closed today
+    # but whose buy execution is not in today's IB fills.
+    today = __import__("datetime").date.today().isoformat()
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        sp_closed = [dict(r) for r in conn.execute(
+            """SELECT * FROM strategy_positions
+               WHERE status = 'closed' AND date(exit_time) = ?""",
+            (today,),
+        ).fetchall()]
+        conn.close()
+
+        trade_symbols = {t["symbol"] for t in trades if t["closedShares"] > 0}
+        for sp in sp_closed:
+            if sp["symbol"] not in trade_symbols and sp["pnl"] is not None:
+                trades.append({
+                    "symbol": sp["symbol"],
+                    "avgBuyPrice": round(sp["entry_price"], 4),
+                    "avgSellPrice": round(sp["exit_price"], 4) if sp["exit_price"] else 0,
+                    "closedShares": sp["quantity"],
+                    "remainingShares": 0.0,
+                    "grossPnL": round(sp["pnl"], 4),
+                    "commission": 0.0,
+                    "netPnL": round(sp["pnl"], 4),
+                    "pnlPercent": round(sp["pnl_pct"], 2) if sp["pnl_pct"] else 0,
+                    "exitType": sp["exit_reason"] or "unknown",
+                    "buyTime": sp["entry_time"],
+                    "sellTime": sp["exit_time"],
+                })
+    except Exception:
+        pass
+
     # Sort by P&L
     trades.sort(key=lambda t: t["netPnL"])
 

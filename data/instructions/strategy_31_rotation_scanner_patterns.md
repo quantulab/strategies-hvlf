@@ -603,7 +603,7 @@ For each open position in `rotation_scanner.db` → `strategy_positions` WHERE `
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
+| +5% to +10% | Breakeven (entry price) |
 | +20% to +50% | +10% above entry (entry × 1.10) |
 | +50% to +100% | MAX(entry × 1.25, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
@@ -797,3 +797,66 @@ These lessons are derived from the 53-day scanner pattern report and must be app
 ## Database Initialization Command
 
 On first run, execute all CREATE TABLE statements above against `D:\src\ai\mcp\ib\rotation_scanner.db`. The database file will be created automatically by SQLite on first connection.
+
+---
+
+## ML/AI Enhancement Opportunities (Cross-Strategy)
+
+### Research Papers Applicable to ALL Sub-Strategies
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **HMM + LSTM for Stock Trends** | [2104.09700](https://arxiv.org/abs/2104.09700) | Replace Phase 1 regime classification (simple G/L ratio) with HMM-based regime detector combining scanner breadth, VIX, and sector rotation signals |
+| **When Alpha Breaks: Safe Stock Rankers** | [2603.13252](https://arxiv.org/abs/2603.13252) | Two-level uncertainty framework — detect when ANY sub-strategy's scoring model is unreliable during regime shifts. Auto-tighten thresholds |
+| **Adaptive Market Intelligence: Mixture of Experts** | [2508.02686](https://hf.co/papers/2508.02686) | Route capital allocation across sub-strategies using a volatility-aware gating mechanism instead of fixed regime→priority mapping |
+| **Proactive Model Adaptation Against Concept Drift** | [2412.08435](https://hf.co/papers/2412.08435) | Detect when scanner pattern statistical properties have shifted — auto-recalibrate conviction scoring thresholds |
+| **TradeFM: Generative Foundation Model for Trade-Flow** | [2602.23784](https://hf.co/papers/2602.23784) | 524M-param transformer for cross-asset trade flow analysis — detect macro regime shifts from aggregate order flow |
+| **Alpha-R1: Alpha Screening with LLM Reasoning** | [2512.23515](https://hf.co/papers/2512.23515) | RL-trained LLM for context-aware alpha screening — could serve as a meta-strategy selector across all 6 sub-strategies |
+
+### Hugging Face Models for Cross-Strategy Use
+
+| Model | Downloads | Use Case |
+|-------|-----------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) | 252K | News sentiment scoring for ALL candidates — add as universal conviction factor |
+| [mrm8488/deberta-v3-ft-financial-news-sentiment-analysis](https://hf.co/mrm8488/deberta-v3-ft-financial-news-sentiment-analysis) | 87K | Higher-accuracy DeBERTa-v3 sentiment for Tier 1 signal validation |
+| [ahmedrachid/FinancialBERT-Sentiment-Analysis](https://hf.co/ahmedrachid/FinancialBERT-Sentiment-Analysis) | 22K | Financial-domain BERT for earnings/guidance news |
+| [soleimanian/financial-roberta-large-sentiment](https://hf.co/soleimanian/financial-roberta-large-sentiment) | 3.4K | Large RoBERTa for deep analysis of corporate filings, ESG reports |
+| [nickmuchi/finbert-tone-finetuned-finance-topic-classification](https://hf.co/nickmuchi/finbert-tone-finetuned-finance-topic-classification) | 694 | Topic classification — route signals by catalyst type (earnings, M&A, macro, technical) |
+| [keras-io/timeseries-anomaly-detection](https://hf.co/keras-io/timeseries-anomaly-detection) | 30 | Detect anomalous volume/price patterns that deviate from historical scanner norms |
+
+### Cross-Strategy Enhancement Architecture
+
+1. **Regime Detection Layer (Phase 1 Enhancement):**
+   - Replace fixed BULL/BEAR/NEUTRAL classification with HMM (paper 2104.09700) trained on: scanner breadth, G/L ratio, VIX, sector rotation scores, volume regime
+   - Output: regime probabilities + transition probabilities → feed into sub-strategy priority weighting
+   - Add concept drift detection (paper 2412.08435) to alert when scanner patterns are non-stationary
+
+2. **Intelligent Rotation Selector (Phase 4 Enhancement):**
+   - Replace fixed regime→priority mapping with Mixture of Experts (paper 2508.02686)
+   - Each sub-strategy is an "expert" — a volatility-aware gate learns which expert(s) to allocate capital to in current conditions
+   - Gate features: regime state, recent KPIs per sub-strategy, sector momentum, VIX level, time of day
+   - Output: capital allocation weights across sub-strategies (replacing binary priority list)
+
+3. **Universal News Sentiment Layer (Phase 3-4 Enhancement):**
+   - For every candidate across all sub-strategies, fetch headlines via `get_news_headlines(symbol)`
+   - Score with distilroberta financial sentiment model → add ±1 conviction based on sentiment polarity
+   - Classify catalyst type with finbert topic classifier → route to appropriate sub-strategy (earnings→elite accumulation, gap→premarket persist, sector rotation→capsize breakout)
+
+4. **Anomaly Detection Guard (Phase 5 Enhancement):**
+   - Use time series anomaly detection model to flag unusual scanner behavior (sudden spike in candidates, volume patterns deviating from historical norms)
+   - On detected anomaly: reduce max entries per cycle from 2 to 1, require score 6+ for Tier 1
+
+5. **Meta-Learning KPI Optimizer (Phase 8 Enhancement):**
+   - Track per-sub-strategy KPIs over rolling 20-trade windows
+   - Use the "When Alpha Breaks" uncertainty framework to detect when a sub-strategy's edge has degraded
+   - Auto-adjust conviction thresholds: degraded sub-strategy requires score 7+ instead of 5+
+   - Auto-promote outperforming sub-strategy: lower threshold to score 4+ for Tier 1
+
+### Per-Sub-Strategy Enhancement Details
+See the ML/AI Enhancement sections in each sub-strategy's instruction file:
+- `strategy_32-rotation-volume_surge.md` — Lead-lag ML, order-flow entropy, volume conversion classifier
+- `strategy_33-rotation-streak_continuation.md` — Streak survival classifier, temporal pattern matching, factor momentum overlay
+- `strategy_34-rotation-whipsaw_fade.md` — HMM regime classifier, autocorrelation factor, LETF rebalancing timer, MoE routing
+- `strategy_35-rotation-premarket_persist.md` — Dynamic persistence model, concept drift detector, news catalyst scoring
+- `strategy_36-rotation-capsize_breakout.md` — Markov transition model, peer crossover detection, fundamental catalyst filter
+- `strategy_37-rotation-elite_accumulation.md` — RL VWAP entry optimization, LOB bounce predictor, institutional flow asymmetry

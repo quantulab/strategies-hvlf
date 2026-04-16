@@ -233,8 +233,8 @@ For each open `rotation_elite_accumulation` position:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
 | +50% to +100% | MAX(+25% above entry, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
 
@@ -335,3 +335,35 @@ A ticker can be #1 on TopGainers for 1-2 days due to a news catalyst then disapp
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stops |
 | `get_scanner_dates()` | Phase 3 |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **VWAP Execution as Optimal Strategy** | [1408.6118](https://arxiv.org/abs/1408.6118) | Mathematical proof that VWAP is optimal execution benchmark — validates the VWAP pullback entry thesis from an institutional perspective |
+| **Optimal VWAP Under Transient Impact** | [1901.02327](https://arxiv.org/abs/1901.02327) | VWAP optimization accounting for permanent + transient market impact — models how institutional accumulation affects VWAP behavior |
+| **Deep Learning for VWAP Execution** | [2502.13722](https://arxiv.org/abs/2502.13722) | DL model for volume curve prediction — predict intraday volume distribution to identify optimal VWAP pullback windows |
+| **Price Impact Asymmetry of Institutional Trading** | [1110.3133](https://arxiv.org/abs/1110.3133) | Buy/sell impact asymmetry in institutional orders — if buy impact > sell impact, accumulation thesis confirmed. Use as conviction factor |
+| **TLOB: Transformer for LOB Price Trend** | [2502.15757](https://hf.co/papers/2502.15757) | Dual-attention transformer for limit order book prediction — predict VWAP bounce probability before placing limit order |
+| **RL for Optimal Execution with Time-Varying Liquidity** | [2402.12049](https://hf.co/papers/2402.12049) | Double Deep Q-learning for adaptive execution — learn optimal pullback depth dynamically instead of fixed 0.5% VWAP proximity |
+| **MM-DREX: Multimodal Expert Routing for Trading** | [2509.05080](https://hf.co/papers/2509.05080) | Vision-language model for candlestick patterns + dynamic expert routing — detect accumulation patterns from candlestick chart analysis |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Score news for elite tickers — sustained positive sentiment confirms institutional accumulation thesis |
+| [mrm8488/deberta-v3-ft-financial-news-sentiment-analysis](https://hf.co/mrm8488/deberta-v3-ft-financial-news-sentiment-analysis) (87K downloads) | High-accuracy sentiment for elite stock validation — analyst upgrades, institutional filings |
+| [soleimanian/financial-roberta-large-sentiment](https://hf.co/soleimanian/financial-roberta-large-sentiment) (3.4K downloads) | Deep analysis of earnings calls, ESG reports for fundamental accumulation thesis |
+
+### Proposed Enhancements
+
+1. **RL-Based VWAP Entry Optimization:** Replace fixed 0.5% VWAP proximity trigger with a DRL agent (paper 2402.12049) that learns optimal pullback depth per ticker. Features: current distance to VWAP, volume profile, bid-ask spread, time of day, historical VWAP bounce success rate. The agent learns when shallow pullbacks (0.2%) are sufficient vs. when to wait for deeper pullbacks (1%).
+2. **LOB Bounce Probability:** Apply dual-attention LOB transformer (paper 2502.15757) to predict the probability of price bouncing off VWAP before placing limit order. Only place LMT at VWAP when bounce probability > 65%. When bounce probability is low, wait for next cycle.
+3. **Institutional Flow Asymmetry Factor:** Compute the buy/sell impact ratio (paper 1110.3133) using recent trade data. If buy_impact / sell_impact > 1.2, institutional accumulation is confirmed — add +2 conviction. If ratio < 0.8, distribution may be occurring — add -2 conviction.
+4. **Volume Curve Prediction for Entry Timing:** Use DL volume curve model (paper 2502.13722) to predict when VWAP pullbacks are most likely (typically at volume troughs, 11:30 AM - 1:00 PM). Schedule entry attempts during predicted pullback windows rather than random 10-minute cycles.
+5. **News-Driven Accumulation Confirmation:** Use financial sentiment models to detect sustained positive institutional interest (analyst upgrades, 13F filings, insider buying). Sustained positive news flow + top-5 rank = strongest accumulation signal (+2 conviction).

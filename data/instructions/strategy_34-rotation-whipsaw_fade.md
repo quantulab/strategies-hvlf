@@ -319,3 +319,35 @@ Report §8 shows 311,303 transitions from HighOpenGap → LossSinceOpen. This IS
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 |
 | `classify_market_regime()` | Phase 1 — disable on trending days |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **Compounding Effects in Leveraged ETFs** | [2504.20116](https://arxiv.org/abs/2504.20116) | LETF performance depends on return autocorrelation — negative autocorrelation = higher mean reversion edge. Use as dynamic conviction factor |
+| **LETF Rebalancing Destabilizes Markets** | [2010.13036](https://arxiv.org/abs/2010.13036) | Agent-based model showing LETF rebalancing creates predictable reversals near close — explains WHY whipsaw names mean-revert and optimal fade timing |
+| **Threshold Model for Local Volatility** | [1712.08329](https://arxiv.org/abs/1712.08329) | Piecewise-constant volatility with leverage effect + mean reversion — mathematical basis for estimating reversion speed |
+| **HMM + LSTM for Stock Trends** | [2104.09700](https://arxiv.org/abs/2104.09700) | HMM regime detection combined with LSTM — replace simple G/L ratio with HMM-based trending vs. mean-reverting regime classifier |
+| **Advance Bull/Bear Phase Detection** | [2411.13586](https://arxiv.org/abs/2411.13586) | Advance detection of market phases — predict when trending days will break fades BEFORE entering |
+| **Adaptive Market Intelligence: MoE Framework** | [2508.02686](https://hf.co/papers/2508.02686) | Mixture of Experts with volatility-aware gating — route decisions to fade expert vs. trend expert per detected regime |
+| **Trade the Event: Corporate Events Detection** | [2105.12825](https://hf.co/papers/2105.12825) | News-based event detection — distinguish news-driven gaps (less likely to revert) from flow-driven gaps (more likely to revert) |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Detect if whipsaw ticker's gap is news-driven (earnings, FDA) vs. flow-driven — news-driven gaps less likely to revert |
+| [mrm8488/deberta-v3-ft-financial-news-sentiment-analysis](https://hf.co/mrm8488/deberta-v3-ft-financial-news-sentiment-analysis) (87K downloads) | Higher-accuracy sentiment model for critical fade decisions on high-conviction signals |
+| [nickmuchi/finbert-tone-finetuned-finance-topic-classification](https://hf.co/nickmuchi/finbert-tone-finetuned-finance-topic-classification) | Classify news catalyst type — earnings/guidance gaps revert less than flow/technical gaps |
+
+### Proposed Enhancements
+
+1. **HMM Regime Classifier:** Replace simple G/L ratio threshold with HMM-based regime detector (paper 2104.09700). Train on historical scanner breadth + G/L ratio + VIX to classify: TRENDING (disable fades), MEAN-REVERTING (enable fades), TRANSITION (reduce size). Update regime classification every 30 min.
+2. **Return Autocorrelation Conviction Factor:** Compute rolling 5-day return autocorrelation per whipsaw ticker (paper 2504.20116). Negative autocorrelation = higher fade conviction (+2 points). Positive autocorrelation = trending, reduce conviction (-2 points).
+3. **LETF Rebalancing Timer:** Model the LETF rebalancing flow (paper 2010.13036) to predict optimal fade entry window. LETFs rebalance near close — fading at 2-3 PM captures the pre-rebalancing reversal.
+4. **News-Driven Gap Filter:** Use financial sentiment model + topic classifier to detect if gap is news-driven (earnings surprise, FDA approval) vs. technical/flow-driven. News-driven gaps get -3 conviction (less likely to revert). Flow-driven gaps get +1 conviction.
+5. **Mixture of Experts Routing:** Implement MoE framework (paper 2508.02686) with two experts: fade expert (mean-reversion model) and trend expert (momentum model). Volatility-aware gate routes each signal to the appropriate expert. If fade expert's confidence > 70%, trade; otherwise skip.

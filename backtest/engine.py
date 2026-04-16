@@ -567,45 +567,61 @@ def evaluate_trade(
         entry_price=entry_price,
     )
 
-    # Simulate bar-by-bar
+    # Simulate bar-by-bar with trailing stop ratchet
     peak = entry_price
     trough = entry_price
 
     if signal.direction == "LONG":
         stop_price = entry_price * (1 - stop_pct)
-        target_price = entry_price * (1 + target_pct)
     else:
         stop_price = entry_price * (1 + stop_pct)
-        target_price = entry_price * (1 - target_pct)
 
     for bar_time, bar in hold_bars.iterrows():
         if signal.direction == "LONG":
             peak = max(peak, bar["high"])
             trough = min(trough, bar["low"])
 
+            # Trailing stop ratchet — tighten stop as gains increase
+            gain_pct = (peak - entry_price) / entry_price
+            if gain_pct >= 0.50:
+                ratchet = peak * 0.97  # Trail 3% below peak
+            elif gain_pct >= 0.20:
+                ratchet = max(bar["high"] * 0.98, entry_price * 1.10)
+            elif gain_pct >= 0.10:
+                ratchet = bar["high"] * 0.98  # Trail 2% below current
+            elif gain_pct >= 0.05:
+                ratchet = entry_price  # Breakeven
+            else:
+                ratchet = stop_price
+            stop_price = max(stop_price, ratchet)  # Only ratchet up
+
             if bar["low"] <= stop_price:
                 trade.exit_time = bar_time
                 trade.exit_price = stop_price
-                trade.exit_reason = "stop_loss"
-                break
-            if bar["high"] >= target_price:
-                trade.exit_time = bar_time
-                trade.exit_price = target_price
-                trade.exit_reason = "take_profit"
+                trade.exit_reason = "trailing_stop" if gain_pct >= 0.05 else "stop_loss"
                 break
         else:
             peak = min(peak, bar["low"])
             trough = max(trough, bar["high"])
 
+            # Trailing stop ratchet for shorts — tighten stop as gains increase
+            gain_pct = (entry_price - peak) / entry_price
+            if gain_pct >= 0.50:
+                ratchet = peak * 1.03  # Trail 3% above peak (for shorts, peak is lowest)
+            elif gain_pct >= 0.20:
+                ratchet = min(bar["low"] * 1.02, entry_price * 0.90)
+            elif gain_pct >= 0.10:
+                ratchet = bar["low"] * 1.02  # Trail 2% above current
+            elif gain_pct >= 0.05:
+                ratchet = entry_price  # Breakeven
+            else:
+                ratchet = stop_price
+            stop_price = min(stop_price, ratchet)  # Only ratchet down for shorts
+
             if bar["high"] >= stop_price:
                 trade.exit_time = bar_time
                 trade.exit_price = stop_price
-                trade.exit_reason = "stop_loss"
-                break
-            if bar["low"] <= target_price:
-                trade.exit_time = bar_time
-                trade.exit_price = target_price
-                trade.exit_reason = "take_profit"
+                trade.exit_reason = "trailing_stop" if gain_pct >= 0.05 else "stop_loss"
                 break
 
     # Time stop if neither stop nor target hit

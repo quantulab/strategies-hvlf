@@ -230,8 +230,8 @@ For each open `rotation_capsize_breakout` position:
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
 | +50% to +100% | MAX(+25% above entry, peak × 0.80) |
 | >+100% | Trail at peak × 0.75 |
 
@@ -334,3 +334,33 @@ Standard 5% stop is too tight for a multi-day strategy — normal daily volatili
 | `place_order(...)` | Phase 2, Phase 5 |
 | `modify_order(...)` | Phase 6 — trailing stops |
 | `get_scanner_dates()` | Phase 3 |
+
+---
+
+## ML/AI Enhancement Opportunities
+
+### Research Papers for Implementation
+
+| Paper | arxiv | Enhancement |
+|-------|-------|-------------|
+| **Survivorship Bias in Small-Cap Indices** | [2603.19380](https://arxiv.org/abs/2603.19380) | Quantifies survivorship bias in small-cap — critical for understanding that crossover signals may reflect index rebalancing, not genuine growth |
+| **Intraday Order Dynamics by Market Cap** | [2502.07625](https://arxiv.org/abs/2502.07625) | Markov chain model of order transition dynamics across High/Medium/Low cap stocks — can model the probability of sustained cap-tier transitions |
+| **Sector Rotation by Factor Model** | [2401.00001](https://hf.co/papers/2401.00001) | Factor model framework for sector/size rotation — applicable to predicting which cap tiers are favored in current regime |
+| **TradeFM: Generative Foundation Model for Trade-Flow** | [2602.23784](https://hf.co/papers/2602.23784) | 524M-param transformer learns cross-asset trade representations — could detect cap-tier regime shifts from aggregate flow patterns |
+| **Structured Event Representation for Returns** | [2512.19484](https://arxiv.org/abs/2512.19484) | LLM-extracted event features from news predict returns — identify fundamental catalysts driving crossover (earnings, contracts, M&A) |
+| **Stockformer: Price-Volume Factor Model** | [2401.06139](https://hf.co/papers/2401.06139) | Graph embedding captures multi-stock relationships — detect when peer stocks are also crossing tiers (sector-wide crossover) |
+
+### Hugging Face Models
+
+| Model | Use Case |
+|-------|----------|
+| [mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis](https://hf.co/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis) (252K downloads) | Detect news catalysts driving crossover — fundamental catalysts (earnings, contracts) produce more sustainable crossovers |
+| [nickmuchi/finbert-tone-finetuned-finance-topic-classification](https://hf.co/nickmuchi/finbert-tone-finetuned-finance-topic-classification) | Classify crossover catalyst type — M&A/earnings crossovers sustain better than technical crossovers |
+| [soleimanian/financial-roberta-large-sentiment](https://hf.co/soleimanian/financial-roberta-large-sentiment) (3.4K downloads) | Deep sentiment analysis on corporate filings/ESG for fundamental crossover thesis validation |
+
+### Proposed Enhancements
+
+1. **Markov Transition Probability Model:** Use the Markov chain framework (paper 2502.07625) to compute transition probabilities between cap tiers. Replace fixed "2+ day confirmation" with dynamic sustainability probability. If P(stay in new tier) > 70%, enter immediately on day 1 with high conviction.
+2. **Peer Crossover Detection:** Apply graph-based multi-stock modeling (Stockformer, paper 2401.06139) to detect when multiple stocks in the same sector are crossing tiers simultaneously. Sector-wide crossover = +3 conviction (industry rotation), single-stock crossover = standard scoring.
+3. **Fundamental Catalyst Filter:** Use LLM event extraction (paper 2512.19484) + sentiment model to identify news catalysts driving crossover. Categories: (a) Fundamental (earnings, contracts, FDA) = +2 conviction, (b) Technical (volume only) = +0, (c) Index rebalancing (paper 2603.19380) = -2 conviction (temporary, will revert).
+4. **Size Factor Regime Overlay:** Track the small-cap vs. large-cap factor spread (paper 2401.00001). When small-cap factor is outperforming, Small→Mid crossovers are more reliable. When large-cap is outperforming, Mid→Large crossovers are more reliable. Add as regime-aware conviction modifier.

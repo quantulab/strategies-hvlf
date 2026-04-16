@@ -48,10 +48,10 @@ Current candidates: NCI (crashed from $5.85 to $0.49), OKLL (dropped from $9.45 
 
 | Unrealized Gain | Required Stop Level |
 |-----------------|---------------------|
-| +10% to +20% | Breakeven (entry price) |
-| +20% to +50% | +10% above entry |
-| +50% to +100% | MAX(+25% above entry, 20% below peak price) |
-| >+100% | Trail 25% below peak price |
+| +5% to +10% | Breakeven (entry price) |
+| +10% to +20% | Trail 2% below current price |
+| +20% to +50% | MAX(trail 2% below current, +10% above entry) |
+| +50%+ | Trail 3% below peak price |
 
 - Stops only ratchet UP, never down
 - Checked every monitoring cycle (Phase 6)

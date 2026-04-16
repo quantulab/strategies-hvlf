@@ -110,10 +110,43 @@ async def get_closed_pnl(date: str = "", ctx: Context = None) -> str:
     if not date:
         date = __import__("datetime").date.today().isoformat()
 
+    # Include any trade SOLD on this date (not just bought on this date)
+    # This ensures multi-day holds show up on the day they were closed.
     rows = [dict(r) for r in conn.execute(
-        "SELECT * FROM closed_trades WHERE date(buy_time) = ? ORDER BY net_pnl",
+        """SELECT * FROM closed_trades
+           WHERE date(buy_time) = ? OR date(sell_time) = ?
+           ORDER BY net_pnl""",
+        (date, date),
+    ).fetchall()]
+
+    # Also pull closed strategy_positions exited today that may not be in
+    # closed_trades (e.g. multi-day holds where IB only reports today's sell).
+    sp_rows = [dict(r) for r in conn.execute(
+        """SELECT * FROM strategy_positions
+           WHERE status = 'closed' AND date(exit_time) = ?""",
         (date,),
     ).fetchall()]
+
+    # Add strategy_positions that aren't already in closed_trades
+    ct_symbols = {(r["symbol"], round(r["sell_price"], 2)) for r in rows}
+    for sp in sp_rows:
+        key = (sp["symbol"], round(sp["exit_price"], 2) if sp["exit_price"] else 0)
+        if key not in ct_symbols:
+            rows.append({
+                "id": sp["id"],
+                "symbol": sp["symbol"],
+                "quantity": sp["quantity"],
+                "buy_price": sp["entry_price"],
+                "sell_price": sp["exit_price"],
+                "buy_time": sp["entry_time"],
+                "sell_time": sp["exit_time"],
+                "gross_pnl": sp["pnl"] or 0,
+                "net_pnl": sp["pnl"] or 0,
+                "pnl_pct": sp["pnl_pct"] or 0,
+                "commission": 0,
+                "exit_type": sp["exit_reason"] or "unknown",
+            })
+
     conn.close()
 
     if not rows:
@@ -155,10 +188,36 @@ async def get_daily_kpis(ctx: Context) -> str:
     conn.row_factory = sqlite3.Row
     today = __import__("datetime").date.today().isoformat()
 
-    # --- Closed trades ---
+    # --- Closed trades (include any trade sold today, not just bought today) ---
     closed = [dict(r) for r in conn.execute(
-        "SELECT * FROM closed_trades WHERE date(buy_time) = ?", (today,)
+        """SELECT * FROM closed_trades
+           WHERE date(buy_time) = ? OR date(sell_time) = ?""",
+        (today, today),
     ).fetchall()]
+
+    # Also include strategy_positions closed today that aren't in closed_trades
+    sp_closed = [dict(r) for r in conn.execute(
+        """SELECT * FROM strategy_positions
+           WHERE status = 'closed' AND date(exit_time) = ?""",
+        (today,),
+    ).fetchall()]
+    ct_symbols = {(r["symbol"], round(r.get("sell_price", 0) or 0, 2)) for r in closed}
+    for sp in sp_closed:
+        key = (sp["symbol"], round(sp["exit_price"], 2) if sp["exit_price"] else 0)
+        if key not in ct_symbols:
+            closed.append({
+                "symbol": sp["symbol"],
+                "quantity": sp["quantity"],
+                "buy_price": sp["entry_price"],
+                "sell_price": sp["exit_price"],
+                "buy_time": sp["entry_time"],
+                "sell_time": sp["exit_time"],
+                "gross_pnl": sp["pnl"] or 0,
+                "net_pnl": sp["pnl"] or 0,
+                "pnl_pct": sp["pnl_pct"] or 0,
+                "commission": 0,
+                "exit_type": sp["exit_reason"] or "unknown",
+            })
 
     # --- Open positions (from latest portfolio snapshot) ---
     # Use lessons logged today to get strategy breakdown
